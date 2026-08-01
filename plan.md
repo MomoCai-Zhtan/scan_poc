@@ -126,31 +126,6 @@
 - M4: ✅ CSV mapping: 離心開始/結束 → CSV columns 14/15
 
 ### M5: 混合 OCR 策略 (2026-07-31)
-**目標**: 將 C14 (蒸養溫度1-3) 和 C15 (蒸養時間1-3) 正確切割為 3 子列。
-
-**技術方案**:
-- 在 `page_analysis()` 中新增 `mid_subrows` 計算
-- 中型每番 = 264px, 2 子列 (R1+R2), 分隔線在 band offset ~176
-- C14/C15 為 3 子列 → 在欄寬內等分為 3 段 (每段 ~18px, x1248-1391)
-- 回傳結構: `{"subrow1": [x,y,w,h], "subrow2": ..., "subrow3": ...}`
-
-**預期成果**: `page_analysis()` 回傳 C14/C15 的 3 子列座標
-
-### M2: 離心時間欄位 (C3~C7 R2)
-**目標**: 擷取離心開始/結束時間，對應到 CSV。
-
-**技術方案**:
-- R2 分隔線 y 座標 = band_y0 + 176 (來自 ink 分析)
-- C3~C7 R2 → `centrifuge` (start, end) tuple in auto_fields
-- CSV mapping: 離心開始→column 14, 離心結束→column 15 ✅
-
-### M3: UI 更新 — 子列顯示
-**目標**: 在 `index.html` 中顯示 C14/C15 的 3 子列 crop。
-
-**預期成果**: UI 可預覽 3 欄蒸養溫度/時間 crop
-
-### M4: 離心時間欄位到 CSV
-**目標**: 將離心開始/結束對應到 CSV 欄位 14/15。
 
 ## 5. 風險與對應
 
@@ -207,9 +182,28 @@
 
 **策略**: 將 `ocrx.py` 整頁 OCR 結果自動填入表格，僅 C14/C15 與少量模具編號需人工修正。
 
-## 7. 驗證計畫 (已完成)
+## 7. 單頁聚焦 + 集合模式 (2026-08-01)
 
-1. ✅ `page_analysis('1150729.pdf', 1)` — OCR auto_fields 驗證
-2. ✅ `verify_ocr.py` 通過 — 93.1% vs GT
-3. ✅ UI `index.html` 顯示 "OCR 預填" badge + 綠色背景
-4. ✅ `test_flow.py` + `test_export.py` 保持 IDENTICAL
+**動機**: 用戶反饋「不要一口氣 autofill 所有頁面」→ 改成分頁聚焦
+- 選 PDF → 一次只顯示單頁 → OCR 辨識 → 修正 → 「加入集合」 → 下一頁
+- 最後從集合匯出 CSV (多頁合併)
+
+**API**:
+- `GET /api/pdf/<name>/<page>` — 單頁分析 + OCR
+- `POST /api/pdf/<name>/<page>/ocr` — 重新觸發單頁 OCR
+- `GET /api/collection` — 取得集合
+- `POST /api/collection` — 加入当前頁到集合
+- `DELETE /api/collection` — 清除集合
+- `POST /export` — 從集合匯出 CSV
+
+**前端流程**:
+1. 點擊 PDF 按鈕 → `openPdf()` → 載入第 1 頁 + OCR
+2. `loadPage(page)` → 顯示單頁 + auto-fill 表格
+3. 上一頁 / 下一頁 按鈕導航
+4. 「加入集合」按鈕 → `addToCollection()` → 儲存当前頁表格資料
+5. 「匯出 CSV」按鈕 → `exportCollection()` → 從集合匯出所有頁面
+
+**驗證**:
+- ✅ 單頁 API 200 OK + auto_fields
+- ✅ Collection GET/POST/DELETE 200 OK
+- ✅ UI: 頁碼顯示 (X/Y)、上一頁/下一頁、加入集合按鈕

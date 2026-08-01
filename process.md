@@ -175,6 +175,54 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 - C14/C15: 保持空白 (稀少墨 → 人工輸入, 正確的決策) ✅
 - **最終準確率: 98.6% (71/72)** — 僅 Band 2 speed4 (930 vs 980) 1 個錯誤
 
+## 2026-08-01 17:55 — 單頁聚焦 + 集合模式 (UI 重構)
+
+**動機**: 用戶反饋「不要一口氣 autofill 所有頁面」→ 改成分頁聚焦模式
+- 選 PDF → 一次只顯示單頁 → OCR 辨識 → 修正 → 「加入集合」 → 下一頁
+- 最後從集合匯出 CSV (多頁合併)
+
+**實作**:
+
+### Backend (`app.py`)
+- `/api/pdf/<name>/<page>` — 單頁分析 + OCR (取代全頁 `/api/pdf/<name>`)
+- `/api/pdf/<name>/<page>/ocr` — 重新觸發單頁 OCR
+- `/api/collection` — GET 集合 / POST 加入 / DELETE 清除
+- `COLLECTIONS = {}` — in-memory 集合儲存 (session-based)
+- `app.secret_key` — 支援 session
+
+### Frontend (`index.html`)
+- **Header 變更**:
+  - 上一頁 / 下一頁 按鈕 + 頁碼顯示 (X / Y)
+  - 「加入集合」按鈕 (綠色)
+  - 集合計數 badge (黃色)
+  - 匯出 CSV 按鈕 (從集合匯出)
+- **流程**:
+  1. 用戶點擊 PDF 按鈕 → `openPdf()` → 載入第 1 頁
+  2. `loadPage(page)` → 呼叫 `/api/pdf/<name>/<page>` → OCR auto-fill
+  3. 用戶修正欄位 → 點擊「加入集合」 → `addToCollection()`
+  4. 點擊「下一頁」 → `loadPage(currentPage + 1)`
+  5. 重複 2-4
+  6. 點擊「匯出 CSV」 → `exportCollection()` → 從集合匯出所有頁面
+- **狀態變數**:
+  - `currentPage` — 當前頁碼 (1-based)
+  - `totalPages` — 總頁數
+  - `collectionCount` — 集合頁數
+  - `analysisData.pages` — 只含當前頁 (單頁模式)
+
+### 移除元素
+- `analysisData.pages.forEach` 改為單頁 `analysisData.pages[0]`
+- `buildMain()` 不再迭代所有頁面
+- `buildTable()` 表格只 append 到 `table-col-0`
+
+### CSS 新增
+- `.nav-btn` — 上一頁/下一頁按鈕樣式
+- `.file-btn` — 上傳按鈕樣式
+
+### 驗證
+- `/api/pdf/1150729.pdf/2` → 200 OK, type=中型, auto_fields=True
+- `/api/collection` GET/POST/DELETE → 200 OK
+- 單頁 API 正確回傳 auto_fields (OCR 預填資料)
+
 **動機**: 評估「逐番 OCR vs 整頁 OCR」+ API 限制後決定混合方案:
 - poc 棄整頁是因 A4 被壓到 900px 寬; 07-掃描 200 DPI 整頁實測 93.1%, 不需逐番全切
 - 逐番全切 = 6~10× API 呼叫/成本 + rate limit 風險
