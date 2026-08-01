@@ -13,6 +13,14 @@
   header select, header button, header input { font-size: 14px; padding: 6px 10px; }
   button { cursor: pointer; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
   button.primary { background: #4285f4; color: #fff; border-color: #4285f4; }
+  .file-btn { display: inline-block; padding: 6px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .file-btn:hover { background: #f5f5f5; }
+  .pdf-btn { padding: 5px 10px; margin: 2px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .pdf-btn:hover { background: #f5f5f5; }
+  .pdf-btn.on { background: #4285f4; color: #fff; border-color: #4285f4; }
+  .page-body { display: flex; gap: 12px; padding: 12px; }
+  .scan-col { flex: 0 0 auto; max-width: 700px; }
+  .table-col { flex: 1 1 auto; overflow-x: auto; }
   main { padding: 16px; }
   .page { background: #fff; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
   .page-head { display: flex; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -44,7 +52,12 @@
 <body>
 <header>
   <h1>離心製管掃描輸入</h1>
-  <label>掃描檔: <select id="pdfSel"></select></label>
+  <label>掃描檔:</label>
+  <span id="pdfGroup"></span>
+  <label class="file-btn">
+    上傳 PDF
+    <input type="file" id="pdfUpload" accept=".pdf" style="display:none">
+  </label>
   <span id="dateInfo"></span>
   <span id="msg" class="msg" style="display:none"></span>
   <button id="btnExport" class="primary">匯出 CSV</button>
@@ -80,15 +93,34 @@ function showMsg(text, ok){
 }
 
 function loadPdfs(){
-  const sel = $("pdfSel");
-  sel.innerHTML = "";
+  const group = $("pdfGroup");
+  group.innerHTML = "";
   PDFS.forEach(p => {
-    const o = document.createElement("option");
-    o.value = p; o.textContent = p;
-    sel.appendChild(o);
+    const btn = document.createElement("button");
+    btn.className = "pdf-btn";
+    btn.textContent = p;
+    btn.onclick = () => openPdf(p, btn);
+    group.appendChild(btn);
   });
-  sel.onchange = () => openPdf(sel.value);
-  if (PDFS.length) openPdf(PDFS[0]);
+  if (PdfS.length) openPdf(PdfS[0], group.children[0]);
+  $("pdfUpload").onchange = (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    showMsg("上傳中...", true);
+    fetch("/upload", { method: "POST", body: form })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok){
+          showMsg("上傳成功: " + data.name, true);
+          location.reload();
+        } else {
+          showMsg("上傳失敗: " + (data.error || "?"), false);
+        }
+      })
+      .catch(() => showMsg("上傳失敗", false));
+  };
 }
 
 async function openPdf(name){
@@ -160,15 +192,25 @@ function buildMain(){
 
     const body = document.createElement("div");
     body.className = "page-body";
+
+    const scanCol = document.createElement("div");
+    scanCol.className = "scan-col";
     const canvas = document.createElement("canvas");
     canvas.width = 1653; canvas.height = p.size[1];
     canvas.dataset.page = i;
-    body.appendChild(canvas);
+    scanCol.appendChild(canvas);
 
     const chips = document.createElement("div");
     chips.className = "chips";
     chips.id = "chips-" + i;
-    body.appendChild(chips);
+    scanCol.appendChild(chips);
+
+    body.appendChild(scanCol);
+
+    const tableCol = document.createElement("div");
+    tableCol.className = "table-col";
+    tableCol.id = "table-col-" + i;
+    body.appendChild(tableCol);
 
     pageEl.appendChild(body);
     main.appendChild(pageEl);
@@ -469,7 +511,25 @@ function buildTable(){
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
-  main.appendChild(wrap);
+  // Group tables by page and append to per-page table columns
+  const pageTables = {};
+  items.forEach(it => {
+    const key = it.page;
+    if (!pageTables[key]) pageTables[key] = document.createElement("div");
+  });
+  const tempDiv = document.createElement("div");
+  tempDiv.appendChild(wrap);
+  const tables = tempDiv.querySelectorAll("table.grid");
+  tables.forEach(t => {
+    const rows = t.querySelectorAll('tr[data-page]');
+    if (rows.length === 0) return;
+    const page = rows[0].dataset.page;
+    const col = $("table-col-" + page);
+    if (col) {
+      col.innerHTML = "";
+      col.appendChild(t);
+    }
+  });
 }
 
 function shiftValue(p){

@@ -64,6 +64,18 @@ def index():
     return flask.render_template('index.html', pdfs=list_pdfs(), header=HEADER, item_count=ITEM_COUNT)
 
 
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'file' not in flask.request.files:
+        return flask.jsonify({'error': 'no file'}), 400
+    f = flask.request.files['file']
+    if not f.filename or not f.filename.lower().endswith('.pdf'):
+        return flask.jsonify({'error': 'invalid file'}), 400
+    out = os.path.join(ROOT, f.filename)
+    f.save(out)
+    return flask.jsonify({'ok': True, 'name': f.filename})
+
+
 @app.route('/api/pdf/<path:name>')
 def api_pdf(name):
     path = get_pdf(name)
