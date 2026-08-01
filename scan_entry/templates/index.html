@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>離心製管掃描輸入工具</title>
+<style>
+  :root { --line:#ccc; --head:#f0f0f0; --sel:rgba(66,133,244,.25); }
+  * { box-sizing: border-box; }
+  body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: #fafafa; color: #222; }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px; position: sticky; top: 0; z-index: 10;
+           display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0 8px 0 0; }
+  header select, header button, header input { font-size: 14px; padding: 6px 10px; }
+  button { cursor: pointer; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+  button.primary { background: #4285f4; color: #fff; border-color: #4285f4; }
+  main { padding: 16px; }
+  .page { background: #fff; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
+  .page-head { display: flex; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line);
+               background: var(--head); flex-wrap: wrap; }
+  .page-head h3 { margin: 0; font-size: 15px; }
+  .badge { background: #4285f4; color: #fff; border-radius: 3px; padding: 2px 8px; font-size: 13px; }
+  .page-body { display: flex; gap: 12px; padding: 12px; flex-wrap: wrap; }
+  canvas { max-width: 640px; width: 100%; height: auto; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; max-width: 300px; }
+  .arrange { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .arrange .box { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
+  .arrange .box img { display: block; border: 1px solid var(--line); background: #fff; }
+  .arrange .box .cap { font-size: 12px; color: #444; margin-bottom: 4px; }
+  .chip { min-width: 30px; text-align: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
+          cursor: pointer; font-size: 13px; user-select: none; }
+  .chip.on { background: #4285f4; color: #fff; }
+  .table-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+  table.grid { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
+  table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 4px; }
+  table.grid thead tr.group th { background: #e8f0fe; font-size: 12px; color: #444; }
+  table.grid thead tr.cols th { background: var(--head); }
+  table.grid td.auto { background: #fbfbfb; }
+  table.grid input { width: 62px; border: 1px solid transparent; padding: 3px; font-size: 13px; }
+  table.grid input:focus { border-color: #4285f4; outline: none; background: #fff; }
+  table.grid input.auto-fill { background: #e8f5e9; }
+  table.grid input.auto-warn { background: #fef9e7; border-color: #f0ad4e !important; }
+  table.grid td.copytd { text-align: center; }
+  .msg { padding: 8px 14px; border-radius: 4px; margin: 10px 0; }
+  .msg.ok { background: #e6f4ea; color: #1e7e34; }
+  .msg.err { background: #fce8e6; color: #c5221f; }
+</style>
+</head>
+<body>
+<header>
+  <h1>離心製管掃描輸入</h1>
+  <label>掃描檔: <select id="pdfSel"></select></label>
+  <span id="dateInfo"></span>
+  <span id="msg" class="msg" style="display:none"></span>
+  <button id="btnExport" class="primary">匯出 CSV</button>
+</header>
+<main id="main"></main>
+
+<script>
+const PDFS = {{ pdfs | tojson }};
+const HEADER = {{ header | tojson }};
+const ITEM_COUNT = {{ item_count | tojson }};
+const GROUPS = [
+  {label:"基本", cols:["序","品項","生產數量(支數)","生產量修正(+/-量)","位置"]},
+  {label:"轉位", cols:["轉位1","轉位2","轉位3","轉位4","轉位5","轉位6"]},
+  {label:"離心", cols:["離心開始","離心結束","加料轉速","慢速轉速","中速轉速","高速轉速","加料時間","慢速時間","中速時間","高速時間"]},
+  {label:"蒸養", cols:["蒸養池","入池時間","蒸養溫度1","蒸養溫度2","蒸養溫度3","蒸養階段1","蒸養階段2","蒸養階段3"]},
+  {label:"排列", cols:["排列1","排列2","排列3","排列4","排列5","排列6"]},
+];
+const AUTOS = ["日期","類型","番數","時段"];
+
+let analysisData = null;
+let pdfName = "";
+let selections = {};   // page -> Set(bandIndex)
+let dups = {};         // "page:band" -> 額外重複列數
+const pageImages = {}; // page -> HTMLImageElement
+
+function $(id){ return document.getElementById(id); }
+
+function showMsg(text, ok){
+  const m = $("msg");
+  m.textContent = text;
+  m.className = "msg " + (ok ? "ok" : "err");
+  m.style.display = "";
+}
+
+function loadPdfs(){
+  const sel = $("pdfSel");
+  sel.innerHTML = "";
+  PDFS.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p; o.textContent = p;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => openPdf(sel.value);
+  if (PDFS.length) openPdf(PDFS[0]);
+}
+
+async function openPdf(name){
+  pdfName = name;
+  const res = await fetch("/api/pdf/" + encodeURIComponent(name));
+  if (!res.ok){ showMsg("無法分析 " + name, false); return; }
+  analysisData = await res.json();
+  selections = {};
+  dups = {};
+  analysisData.pages.forEach((p, i) => { selections[i] = new Set(); });
+  $("dateInfo").textContent = analysisData.date_iso + " (" + analysisData.date_disp + ")";
+  buildMain();
+}
+
+function buildMain(){
+  const main = $("main");
+  main.innerHTML = "";
+  analysisData.pages.forEach((p, i) => {
+    const pageEl = document.createElement("section");
+    pageEl.className = "page";
+    pageEl.id = "page-" + i;
+
+    const head = document.createElement("div");
+    head.className = "page-head";
+    const h3 = document.createElement("h3");
+    h3.textContent = "第 " + (i+1) + " 頁";
+    head.appendChild(h3);
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = p.type;
+    head.appendChild(badge);
+    const lbl = document.createElement("span");
+    lbl.textContent = "時段:";
+    head.appendChild(lbl);
+    const sel = document.createElement("select");
+    sel.dataset.page = i;
+    ["上午","下午"].forEach(s => {
+      const o = document.createElement("option");
+      o.value = s; o.textContent = s;
+      sel.appendChild(o);
+    });
+    if (p.shift) sel.value = p.shift;
+    sel.onchange = () => updateAutoColumn(i, "時段", sel.value);
+    head.appendChild(sel);
+     const info = document.createElement("span");
+     info.style.color = "#666";
+     info.textContent = p.shift ? ("偵測:" + p.shift + " (可靠度 " + p.shift_conf + ")") : "時段未偵測";
+     head.appendChild(info);
+     if (p.auto_fields && Object.keys(p.auto_fields).length > 0) {
+       const ocrBadge = document.createElement("span");
+       ocrBadge.className = "badge";
+       ocrBadge.style.background = "#34a853";
+       ocrBadge.textContent = "OCR 預填";
+       head.appendChild(ocrBadge);
+     }
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "+ 新增列";
+    addBtn.onclick = () => addRow(i);
+    head.appendChild(addBtn);
+    const selAll = document.createElement("button");
+    selAll.textContent = "全選";
+    selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); };
+    head.appendChild(selAll);
+    const selNone = document.createElement("button");
+    selNone.textContent = "全不選";
+    selNone.onclick = () => { selections[i].clear(); syncPage(i); };
+    head.appendChild(selNone);
+    pageEl.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "page-body";
+    const canvas = document.createElement("canvas");
+    canvas.width = 1653; canvas.height = p.size[1];
+    canvas.dataset.page = i;
+    body.appendChild(canvas);
+
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    chips.id = "chips-" + i;
+    body.appendChild(chips);
+
+    const arrange = document.createElement("div");
+    arrange.className = "arrange";
+    arrange.id = "arrange-" + i;
+    body.appendChild(arrange);
+
+    pageEl.appendChild(body);
+    main.appendChild(pageEl);
+
+    drawPage(i, canvas, chips);
+    buildChips(i, chips);
+  });
+  buildTable();
+}
+
+function drawPage(i, canvas, chips){
+  const p = analysisData.pages[i];
+  const img = new Image();
+  pageImages[i] = img;
+  canvas.onclick = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = parseFloat(canvas.dataset.scale);
+    const y = (ev.clientY - rect.top) * (canvas.height / rect.height) / sx;
+    let hit = -1;
+    bandRects(i).forEach(b => {
+      if (y >= b.y0 && y < b.y1) hit = b.k;
+    });
+    if (hit >= 0) toggleRow(i, hit);
+  };
+  img.onload = () => {
+    const ctx = canvas.getContext("2d");
+    const sx = canvas.width / img.width;
+    canvas.height = Math.round(img.height * sx);
+    canvas.dataset.scale = sx;
+    drawBands(i, canvas);
+  };
+  img.src = "/img/" + encodeURIComponent(pdfName) + "/" + p.page;
+}
+
+function bandRects(i){
+  const p = analysisData.pages[i];
+  const bands = [];
+  p.rows.forEach((b, k) => bands.push({k, y0: b[0], y1: b[1]}));
+  const hs = p.rows.map(b => b[1] - b[0]).sort((a, b) => a - b);
+  const medH = hs.length ? hs[Math.floor(hs.length / 2)] : 60;
+  const lastY1 = p.rows.length ? p.rows[p.rows.length - 1][1] : 0;
+  const top = [...selections[i]].reduce((m, k) => Math.max(m, k), p.rows.length - 1);
+  for (let k = p.rows.length; k <= top; k++){
+    bands.push({k, y0: lastY1 + (k - p.rows.length) * medH, y1: lastY1 + (k - p.rows.length + 1) * medH});
+  }
+  return bands;
+}
+
+function drawBands(i, canvas){
+  const ctx = canvas.getContext("2d");
+  const sx = parseFloat(canvas.dataset.scale);
+  const img = pageImages[i];
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  bandRects(i).forEach(b => {
+    const y = b.y0 * sx, h = (b.y1 - b.y0) * sx;
+    const on = selections[i].has(b.k);
+    ctx.fillStyle = on ? "rgba(66,133,244,.18)" : "rgba(0,0,0,.05)";
+    ctx.fillRect(0, y, canvas.width, h);
+    ctx.strokeStyle = on ? "#4285f4" : "#aaa";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, y, canvas.width, h);
+    ctx.fillStyle = on ? "#fff" : "#666";
+    ctx.fillRect(6, y + 3, 34, 16);
+    ctx.fillStyle = on ? "#4285f4" : "#666";
+    ctx.font = "11px sans-serif";
+    ctx.fillText((b.k + 1) + "番", 9, y + 15);
+  });
+}
+
+function buildChips(i, chips){
+  const p = analysisData.pages[i];
+  chips.innerHTML = "";
+  p.rows.forEach((band, k) => {
+    const c = document.createElement("div");
+    c.className = "chip";
+    c.textContent = k + 1;
+    c.dataset.k = k;
+    c.onclick = () => toggleRow(i, k);
+    chips.appendChild(c);
+  });
+}
+
+function toggleRow(i, k){
+  const set = selections[i];
+  if (set.has(k)) set.delete(k); else set.add(k);
+  syncPage(i);
+}
+
+function syncPage(i){
+  const canvas = document.querySelector('canvas[data-page="' + i + '"]');
+  const chips = $("chips-" + i);
+  chips.querySelectorAll(".chip").forEach(ch => {
+    ch.classList.toggle("on", selections[i].has(parseInt(ch.dataset.k)));
+  });
+  if (canvas) drawBands(i, canvas);
+  renderArrange(i);
+  renderMidDetail(i);
+  buildTable();
+}
+
+function renderArrange(i){
+  const p = analysisData.pages[i];
+  const el = $("arrange-" + i);
+  if (!el) return;
+  el.innerHTML = "";
+  if (p.type !== "中型") return;
+  const sel = [...selections[i]].sort((a, b) => a - b);
+  if (!sel.length) return;
+  sel.forEach(k => {
+    const box = document.createElement("div");
+    box.className = "box";
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    cap.textContent = "第 " + (k + 1) + " 番 模具排列順序 (4 格: 排列1-4)";
+    box.appendChild(cap);
+    const img = document.createElement("img");
+    img.src = "/arrange/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k;
+    box.appendChild(img);
+    el.appendChild(box);
+  });
+}
+
+function renderMidDetail(i){
+  const p = analysisData.pages[i];
+  const el = $("arrange-" + i);
+  if (!el || p.type !== "中型" || !p.mid_layout) return;
+  const sel = [...selections[i]].sort((a, b) => a - b);
+  if (!sel.length) return;
+  sel.forEach(k => {
+    if (!(k in p.mid_layout.bands)) return;
+    const detail = p.mid_layout.bands[k];
+
+    const c14box = document.createElement("div");
+    c14box.className = "box";
+    c14box.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 蒸養溫度1-3</div>';
+    for (let s = 0; s < 3; s++){
+      const img = document.createElement("img");
+      img.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/c14_" + s;
+      img.style.display = "block";
+      img.style.border = "1px solid var(--line)";
+      img.style.marginBottom = "4px";
+      img.style.width = "100%";
+      c14box.appendChild(img);
+    }
+    el.appendChild(c14box);
+
+    const c15box = document.createElement("div");
+    c15box.className = "box";
+    c15box.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 蒸養時間1-3</div>';
+    for (let s = 0; s < 3; s++){
+      const img = document.createElement("img");
+      img.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/c15_" + s;
+      img.style.display = "block";
+      img.style.border = "1px solid var(--line)";
+      img.style.marginBottom = "4px";
+      img.style.width = "100%";
+      c15box.appendChild(img);
+    }
+    el.appendChild(c15box);
+
+    const cgbox = document.createElement("div");
+    cgbox.className = "box";
+    cgbox.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 離心時間(C3~C7 R2)</div>';
+    const cimg = document.createElement("img");
+    cimg.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/centrifuge";
+    cimg.style.width = "100%";
+    cgbox.appendChild(cimg);
+    el.appendChild(cgbox);
+  });
+}
+
+function addRow(i){
+  const p = analysisData.pages[i];
+  const k = p.rows.length;   // 額外列(超出偵測列)
+  if (!selections[i].has(k)){
+    selections[i].add(k);
+  }
+  // 重建 chips 以含新增列
+  const chips = $("chips-" + i);
+  const c = document.createElement("div");
+  c.className = "chip on";
+  c.textContent = "＋" + (k + 1);
+  c.dataset.k = k;
+  c.onclick = () => toggleRow(i, k);
+  chips.appendChild(c);
+  buildTable();
+}
+
+function updateAutoColumn(i, col, value){
+  // 更新該頁所有列的自動欄(時段)
+  const table = document.querySelector("table.grid");
+  if (!table) return;
+  table.querySelectorAll('tr[data-page="' + i + '"]').forEach(tr => {
+    const inp = tr.querySelector('input[name="' + col + '"]');
+    if (inp) inp.value = value;
+  });
+}
+
+function buildTable(){
+  const old = document.querySelector(".table-wrap");
+  if (old) old.remove();
+
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  const table = document.createElement("table");
+  table.className = "grid";
+
+  // 決定列順序:所有被選取列(依頁、依 band),重複列跟在其後
+  const items = [];
+  analysisData.pages.forEach((p, i) => {
+    [...selections[i]].sort((a, b) => a - b).forEach(k => {
+      items.push({page: i, band: k, bandNo: k + 1, dup: 0});
+      for (let d = 1; d <= (dups[i + ":" + k] || 0); d++)
+        items.push({page: i, band: k, bandNo: k + 1, dup: d});
+    });
+  });
+
+  // thead: group 列 + 欄名列
+  const thead = document.createElement("thead");
+  const grpRow = document.createElement("tr");
+  grpRow.className = "group";
+  const autoLabel = document.createElement("th");
+  autoLabel.colSpan = AUTOS.length;
+  autoLabel.textContent = "自動";
+  grpRow.appendChild(autoLabel);
+  GROUPS.forEach(g => {
+    const th = document.createElement("th");
+    th.colSpan = g.cols.length;
+    th.textContent = g.label;
+    grpRow.appendChild(th);
+  });
+  const thCopy = document.createElement("th");
+  thCopy.textContent = "";
+  grpRow.appendChild(thCopy);
+  thead.appendChild(grpRow);
+
+  const colRow = document.createElement("tr");
+  colRow.className = "cols";
+  AUTOS.forEach(c => { const th = document.createElement("th"); th.textContent = c; colRow.appendChild(th); });
+  GROUPS.forEach(g => g.cols.forEach(c => {
+    const th = document.createElement("th"); th.textContent = c; colRow.appendChild(th);
+  }));
+  const thCopy2 = document.createElement("th"); thCopy2.textContent = "操作"; colRow.appendChild(thCopy2);
+  thead.appendChild(colRow);
+  table.appendChild(thead);
+
+  // tbody
+  const tbody = document.createElement("tbody");
+  items.forEach((it, idx) => {
+    const p = analysisData.pages[it.page];
+    const tr = document.createElement("tr");
+    tr.dataset.page = it.page;
+    tr.dataset.band = it.band;
+    tr.dataset.dup = it.dup;
+
+    // 自動欄
+    const autoVals = {
+      日期: analysisData.date_iso,
+      類型: p.type,
+      番數: it.bandNo,
+      時段: shiftValue(it.page)
+    };
+    AUTOS.forEach(c => {
+      const td = document.createElement("td");
+      td.className = "auto";
+      const inp = document.createElement("input");
+      inp.name = c;
+      inp.value = autoVals[c];
+      if (c !== "番數") inp.readOnly = true;
+      inp.style.width = c === "日期" ? "90px" : "48px";
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+
+    // 群組欄
+    GROUPS.forEach(g => g.cols.forEach(c => {
+      const td = document.createElement("td");
+      const inp = document.createElement("input");
+      inp.name = c;
+      // Pre-fill from OCR auto_fields if available
+      const bandFields = p.auto_fields && p.auto_fields[it.band];
+      if (bandFields) {
+        const val = mapField(c, bandFields);
+        if (val !== undefined && val !== '' && val !== null) {
+          inp.value = val;
+          inp.classList.add("auto-fill");
+        }
+      }
+      td.appendChild(inp);
+      tr.appendChild(td);
+    }));
+
+    // 排列:無 OCR 圈選值時自動帶入轉位;OCR 圈選與轉位不符時標黃警告
+    // 中型 3 個模具: 排列1,2,4 ← 轉位1,2,3 (排列3 留空); 4 個模具: 排列1~4 ← 轉位1~4
+    const bandFields2 = p.auto_fields && p.auto_fields[it.band];
+    let moldCount = 0;
+    for (let m = 1; m <= 6; m++){
+      const z = tr.querySelector('input[name="轉位' + m + '"]');
+      if (z && z.value) moldCount++;
+    }
+    GROUPS.forEach(g => {
+      if (g.label !== "排列") return;
+      g.cols.forEach((c, k) => {
+        const pai = tr.querySelector('input[name="' + c + '"]');
+        if (!pai) return;
+        let src = k;                      // 預設 排列(k+1) ← 轉位(k+1)
+        if (p.type === "中型" && moldCount === 3){
+          if (k === 2) src = -1;          // 排列3 留空
+          else if (k === 3) src = 2;      // 排列4 ← 轉位3
+          else if (k >= 4) src = -1;      // 排列5/6 留空
+        }
+        const zhuan = src >= 0 ? tr.querySelector('input[name="轉位' + (src + 1) + '"]') : null;
+        if (!pai.value && zhuan && zhuan.value) {
+          pai.value = zhuan.value;
+          pai.classList.add("auto-fill");
+        }
+        if (bandFields2 && bandFields2.arrange_conflict){
+          pai.classList.add("auto-warn");
+          pai.title = "OCR 排列順序與轉位不符,請人工確認";
+        }
+      });
+    });
+
+    // 生產數量(支數) = 品項對照(支/模具) × 模具個數;對照為 0 或無對照時留空人工輸入
+    const fillQuantity = (r) => {
+      const q = r.querySelector('input[name="生產數量(支數)"]');
+      const it = r.querySelector('input[name="品項"]');
+      if (!q || !it) return;
+      if (q.value) return;
+      const per = ITEM_COUNT[(it.value || "").trim()];
+      if (!per) return;
+      let n = 0;
+      for (let m = 1; m <= 6; m++){
+        const z = r.querySelector('input[name="轉位' + m + '"]');
+        if (z && z.value) n++;
+      }
+      if (n > 0){
+        q.value = per * n;
+        q.classList.add("auto-fill");
+      }
+    };
+    fillQuantity(tr);
+    const itemInp = tr.querySelector('input[name="品項"]');
+    if (itemInp) itemInp.addEventListener("input", () => fillQuantity(tr));
+    for (let m = 1; m <= 6; m++){
+      const z = tr.querySelector('input[name="轉位' + m + '"]');
+      if (z) z.addEventListener("input", () => fillQuantity(tr));
+    }
+
+    // 操作
+    const td = document.createElement("td");
+    td.className = "copytd";
+    const btn = document.createElement("button");
+    btn.textContent = "複製上列";
+    btn.title = "把上一列的值複製到這列";
+    btn.onclick = () => copyFromPrev(tr, tbody.children[idx - 1]);
+    td.appendChild(btn);
+    const dupBtn = document.createElement("button");
+    dupBtn.textContent = "＋重複";
+    dupBtn.title = "同番次新增一列(同一番次多序時使用)";
+    dupBtn.onclick = () => {
+      const key = it.page + ":" + it.band;
+      dups[key] = (dups[key] || 0) + 1;
+      buildTable();
+    };
+    td.appendChild(dupBtn);
+    tr.appendChild(td);
+
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  main.appendChild(wrap);
+}
+
+function shiftValue(p){
+  const sel = document.querySelector('select[data-page="' + p + '"]');
+  return sel ? sel.value : "下午";
+}
+
+function mapField(csvCol, bandFields){
+  if (!bandFields) return undefined;
+  switch (csvCol) {
+    case "品項": return bandFields.item || undefined;
+    case "轉位1": return bandFields.molds[0] || undefined;
+    case "轉位2": return bandFields.molds[1] || undefined;
+    case "轉位3": return bandFields.molds[2] || undefined;
+    case "轉位4": return bandFields.molds[3] || undefined;
+    case "轉位5": return bandFields.molds[4] || undefined;
+    case "轉位6": return bandFields.molds[5] || undefined;
+    case "離心開始": return bandFields.centrifuge[0] || undefined;
+    case "離心結束": return bandFields.centrifuge[1] || undefined;
+    case "加料轉速": return bandFields.speeds[0] || undefined;
+    case "慢速轉速": return bandFields.speeds[1] || undefined;
+    case "中速轉速": return bandFields.speeds[2] || undefined;
+    case "高速轉速": return bandFields.speeds[3] || undefined;
+    case "加料時間": return bandFields.speed_times[0] || undefined;
+    case "慢速時間": return bandFields.speed_times[1] || undefined;
+    case "中速時間": return bandFields.speed_times[2] || undefined;
+    case "高速時間": return bandFields.speed_times[3] || undefined;
+    case "蒸養池": return bandFields.steam_pool || undefined;
+    case "排列1": return bandFields.arrange ? bandFields.arrange[0] : undefined;
+    case "排列2": return bandFields.arrange ? bandFields.arrange[1] : undefined;
+    case "排列3": return bandFields.arrange ? bandFields.arrange[2] : undefined;
+    case "排列4": return bandFields.arrange ? bandFields.arrange[3] : undefined;
+    case "排列5": return bandFields.arrange ? bandFields.arrange[4] : undefined;
+    case "排列6": return bandFields.arrange ? bandFields.arrange[5] : undefined;
+    default: return undefined;
+  }
+}
+
+function copyFromPrev(tr, prev){
+  if (!prev) return;
+  tr.querySelectorAll("input").forEach(inp => {
+    if (inp.readOnly) return;
+    const pv = prev.querySelector('input[name="' + inp.name + '"]');
+    if (pv && pv.value) inp.value = pv.value;
+  });
+}
+
+function collectRows(){
+  const rows = [];
+  analysisData.pages.forEach((p, i) => {
+    [...selections[i]].sort((a, b) => a - b).forEach(k => {
+      const n = 1 + (dups[i + ":" + k] || 0);
+      for (let d = 0; d < n; d++){
+        const tr = document.querySelector('tr[data-page="' + i + '"][data-band="' + k + '"][data-dup="' + d + '"]');
+        const row = {};
+        if (tr){
+          tr.querySelectorAll("input").forEach(inp => { row[inp.name] = inp.value; });
+        }
+        rows.push(row);
+      }
+    });
+  });
+  return rows;
+}
+
+async function exportCsv(){
+  const rows = collectRows();
+  if (!rows.length){ showMsg("沒有選取任何列", false); return; }
+  const body = {
+    pdf: pdfName,
+    date_iso: analysisData.date_iso,
+    date_roc: analysisData.date_roc,
+    rows: rows
+  };
+  const res = await fetch("/export", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  const out = await res.json();
+  if (out.ok){
+    showMsg("已匯出 " + out.path + " (" + out.rows + " 列)", true);
+  } else {
+    showMsg("匯出失敗: " + (out.error || "?"), false);
+  }
+}
+
+$("btnExport").onclick = exportCsv;
+loadPdfs();
+</script>
+</body>
+</html>
