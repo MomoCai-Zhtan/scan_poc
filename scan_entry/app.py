@@ -2,6 +2,7 @@
 """掃描輸入工具 B MVP:PDF → 單頁聚焦 → 集合匯出 → 39欄 CSV"""
 import csv
 import glob
+import logging
 import os
 import re
 import sys
@@ -24,6 +25,13 @@ import structure as st
 
 app = flask.Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'scan-entry-secret-2026')
+
+logger = logging.getLogger('scan_entry')
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(message)s', datefmt='%H:%M:%S'))
+    logger.addHandler(_h)
 
 
 def load_item_count():
@@ -74,12 +82,15 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'file' not in flask.request.files:
+        logger.warning('upload missing file')
         return flask.jsonify({'error': 'no file'}), 400
     f = flask.request.files['file']
     if not f.filename or not f.filename.lower().endswith('.pdf'):
+        logger.warning('upload invalid file: %s', f.filename)
         return flask.jsonify({'error': 'invalid file'}), 400
     out = os.path.join(ROOT, f.filename)
     f.save(out)
+    logger.info('upload saved: %s', f.filename)
     return flask.jsonify({'ok': True, 'name': f.filename})
 
 
@@ -88,7 +99,9 @@ def api_pdf(name):
     """Full PDF analysis (structure only, no OCR). Returns all pages."""
     path = get_pdf(name)
     if not path:
+        logger.warning('api_pdf not found: %s', name)
         return flask.jsonify({'error': 'not found'}), 404
+    logger.info('api_pdf full: %s', name)
     return flask.jsonify(analysis.analyze_pdf(path))
 
 
@@ -97,10 +110,13 @@ def api_pdf_page(name, page):
     """Single page analysis with OCR. Returns one page with auto_fields."""
     path = get_pdf(name)
     if not path:
+        logger.warning('api_pdf_page not found: %s page=%d', name, page)
         return flask.jsonify({'error': 'not found'}), 404
     pages = st.render_pages(path, 200)
     if page < 1 or page > len(pages):
+        logger.warning('api_pdf_page invalid page: %s page=%d (total=%d)', name, page, len(pages))
         return flask.jsonify({'error': 'invalid page'}), 404
+    logger.info('api_pdf_page: %s page=%d', name, page)
     result = analysis.page_analysis(path, page - 1)
     return flask.jsonify(result)
 
@@ -110,10 +126,13 @@ def api_pdf_page_ocr(name, page):
     """Re-trigger OCR for a single page (e.g., after user修正)."""
     path = get_pdf(name)
     if not path:
+        logger.warning('api_pdf_page_ocr not found: %s page=%d', name, page)
         return flask.jsonify({'error': 'not found'}), 404
     pages = st.render_pages(path, 200)
     if page < 1 or page > len(pages):
+        logger.warning('api_pdf_page_ocr invalid page: %s page=%d', name, page)
         return flask.jsonify({'error': 'invalid page'}), 404
+    logger.info('api_pdf_page_ocr re-trigger: %s page=%d', name, page)
     result = analysis.page_analysis(path, page - 1)
     return flask.jsonify(result)
 
@@ -124,6 +143,7 @@ def get_collection():
     sid = flask.session.get('sid') or str(uuid.uuid4())
     flask.session['sid'] = sid
     coll = COLLECTIONS.get(sid, [])
+    logger.info('collection GET sid=%s count=%d', sid[:8], len(coll))
     return flask.jsonify({'items': coll, 'count': len(coll)})
 
 
@@ -146,6 +166,7 @@ def add_to_collection():
     if sid not in COLLECTIONS:
         COLLECTIONS[sid] = []
     COLLECTIONS[sid].append(page_data)
+    logger.info('collection POST sid=%s page=%d rows=%d total=%d', sid[:8], page_data.get('page', 0), len(page_data.get('rows', [])), len(COLLECTIONS[sid]))
     return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
 
 
@@ -155,6 +176,9 @@ def clear_collection():
     sid = flask.session.get('sid')
     if sid and sid in COLLECTIONS:
         del COLLECTIONS[sid]
+        logger.info('collection DELETE sid=%s', sid[:8])
+    else:
+        logger.warning('collection DELETE no session')
     return flask.jsonify({'ok': True})
 
 
@@ -178,6 +202,7 @@ def img(name, page):
         ok, buf = cv2.imencode('.png', annot)
         with open(cache_png, 'wb') as f:
             f.write(buf.tobytes())
+    logger.debug('img cache=%s page=%d', cache_png, page)
     return flask.send_file(cache_png, mimetype='image/png')
 
 
@@ -212,6 +237,7 @@ def crop(name, page, band, area):
     ok, buf = cv2.imencode('.png', crop_img)
     resp = flask.Response(buf.tobytes(), mimetype='image/png')
     resp.headers['Cache-Control'] = 'no-store'
+    logger.debug('crop %s page=%d band=%d area=%s', name, page, band, area)
     return resp
 
 
@@ -223,6 +249,7 @@ def export():
     date_iso = data.get('date_iso', '')
     roc = data.get('date_roc', '')
     if not pdf or not roc:
+        logger.warning('export missing pdf/date')
         return flask.jsonify({'error': 'missing pdf/date'}), 400
     name = '115.%s.%s.csv' % (roc[3:5], roc[5:7])
     out_path = os.path.join(CSV_DIR, name)
@@ -236,9 +263,11 @@ def export():
                 line[k] = (r.get(k) or '').strip()
             line['日期'] = date_iso
             w.writerow(line)
+    logger.info('export %s rows=%d path=%s', pdf, len(rows), out_path)
     return flask.jsonify({'ok': True, 'path': out_path, 'rows': len(rows)})
 
 
 if __name__ == '__main__':
     reload = os.environ.get('BTOOL_RELOAD') == '1'
+    logger.info('starting scan_entry on :5000 reload=%s', reload)
     app.run(debug=reload, threaded=True, port=5000)
