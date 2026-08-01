@@ -133,7 +133,7 @@ def crop(name, page, band, area):
     if not path:
         return flask.abort(404)
     res = analysis.page_analysis(path, page - 1)
-    if not res.get('mid_layout') or band not in res['mid_layout']['bands']:
+    if not res.get('mid_layout') or band >= len(res['mid_layout']['bands']):
         return flask.abort(404)
     layout = res['mid_layout']['bands'][band]
     img = st.render_pages(path, 200)[page - 1]

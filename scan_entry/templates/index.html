@@ -22,10 +22,6 @@
   .page-body { display: flex; gap: 12px; padding: 12px; flex-wrap: wrap; }
   canvas { max-width: 640px; width: 100%; height: auto; border: 1px solid var(--line); background: #fff; cursor: pointer; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; max-width: 300px; }
-  .arrange { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  .arrange .box { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
-  .arrange .box img { display: block; border: 1px solid var(--line); background: #fff; }
-  .arrange .box .cap { font-size: 12px; color: #444; margin-bottom: 4px; }
   .chip { min-width: 30px; text-align: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
           cursor: pointer; font-size: 13px; user-select: none; }
   .chip.on { background: #4285f4; color: #fff; }
@@ -154,11 +150,11 @@ function buildMain(){
     head.appendChild(addBtn);
     const selAll = document.createElement("button");
     selAll.textContent = "全選";
-    selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); };
+    selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); buildTable(); };
     head.appendChild(selAll);
     const selNone = document.createElement("button");
     selNone.textContent = "全不選";
-    selNone.onclick = () => { selections[i].clear(); syncPage(i); };
+    selNone.onclick = () => { selections[i].clear(); syncPage(i); buildTable(); };
     head.appendChild(selNone);
     pageEl.appendChild(head);
 
@@ -173,11 +169,6 @@ function buildMain(){
     chips.className = "chips";
     chips.id = "chips-" + i;
     body.appendChild(chips);
-
-    const arrange = document.createElement("div");
-    arrange.className = "arrange";
-    arrange.id = "arrange-" + i;
-    body.appendChild(arrange);
 
     pageEl.appendChild(body);
     main.appendChild(pageEl);
@@ -266,6 +257,7 @@ function toggleRow(i, k){
   const set = selections[i];
   if (set.has(k)) set.delete(k); else set.add(k);
   syncPage(i);
+  buildTable();
 }
 
 function syncPage(i){
@@ -275,89 +267,14 @@ function syncPage(i){
     ch.classList.toggle("on", selections[i].has(parseInt(ch.dataset.k)));
   });
   if (canvas) drawBands(i, canvas);
-  renderArrange(i);
-  renderMidDetail(i);
-  buildTable();
-}
-
-function renderArrange(i){
-  const p = analysisData.pages[i];
-  const el = $("arrange-" + i);
-  if (!el) return;
-  el.innerHTML = "";
-  if (p.type !== "中型") return;
-  const sel = [...selections[i]].sort((a, b) => a - b);
-  if (!sel.length) return;
-  sel.forEach(k => {
-    const box = document.createElement("div");
-    box.className = "box";
-    const cap = document.createElement("div");
-    cap.className = "cap";
-    cap.textContent = "第 " + (k + 1) + " 番 模具排列順序 (4 格: 排列1-4)";
-    box.appendChild(cap);
-    const img = document.createElement("img");
-    img.src = "/arrange/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k;
-    box.appendChild(img);
-    el.appendChild(box);
-  });
-}
-
-function renderMidDetail(i){
-  const p = analysisData.pages[i];
-  const el = $("arrange-" + i);
-  if (!el || p.type !== "中型" || !p.mid_layout) return;
-  const sel = [...selections[i]].sort((a, b) => a - b);
-  if (!sel.length) return;
-  sel.forEach(k => {
-    if (!(k in p.mid_layout.bands)) return;
-    const detail = p.mid_layout.bands[k];
-
-    const c14box = document.createElement("div");
-    c14box.className = "box";
-    c14box.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 蒸養溫度1-3</div>';
-    for (let s = 0; s < 3; s++){
-      const img = document.createElement("img");
-      img.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/c14_" + s;
-      img.style.display = "block";
-      img.style.border = "1px solid var(--line)";
-      img.style.marginBottom = "4px";
-      img.style.width = "100%";
-      c14box.appendChild(img);
-    }
-    el.appendChild(c14box);
-
-    const c15box = document.createElement("div");
-    c15box.className = "box";
-    c15box.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 蒸養時間1-3</div>';
-    for (let s = 0; s < 3; s++){
-      const img = document.createElement("img");
-      img.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/c15_" + s;
-      img.style.display = "block";
-      img.style.border = "1px solid var(--line)";
-      img.style.marginBottom = "4px";
-      img.style.width = "100%";
-      c15box.appendChild(img);
-    }
-    el.appendChild(c15box);
-
-    const cgbox = document.createElement("div");
-    cgbox.className = "box";
-    cgbox.innerHTML = '<div class="cap">第 ' + (k + 1) + ' 番 離心時間(C3~C7 R2)</div>';
-    const cimg = document.createElement("img");
-    cimg.src = "/crop/" + encodeURIComponent(pdfName) + "/" + p.page + "/" + k + "/centrifuge";
-    cimg.style.width = "100%";
-    cgbox.appendChild(cimg);
-    el.appendChild(cgbox);
-  });
 }
 
 function addRow(i){
   const p = analysisData.pages[i];
-  const k = p.rows.length;   // 額外列(超出偵測列)
+  const k = p.rows.length;
   if (!selections[i].has(k)){
     selections[i].add(k);
   }
-  // 重建 chips 以含新增列
   const chips = $("chips-" + i);
   const c = document.createElement("div");
   c.className = "chip on";
