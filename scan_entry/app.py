@@ -270,6 +270,9 @@ def export():
 @app.route('/favicon.ico')
 def favicon():
     return flask.Response('', status=204)
+
+
+if __name__ == '__main__':
     reload = os.environ.get('BTOOL_RELOAD') == '1'
     logger.info('starting scan_entry on :5000 reload=%s', reload)
     app.run(debug=reload, threaded=True, port=5000)
