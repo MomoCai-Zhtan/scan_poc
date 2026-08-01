@@ -82,6 +82,11 @@
 <main id="main"></main>
 
 <script>
+// Cache buster: reload if server restarted
+const TS = {{ _ts }};
+if (window._ts && window._ts !== TS) location.reload();
+window._ts = TS;
+</script>
 const PDFS = {{ pdfs | tojson }};
 const HEADER = {{ header | tojson }};
 const ITEM_COUNT = {{ item_count | tojson }};

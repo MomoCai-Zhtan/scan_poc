@@ -25,6 +25,8 @@ import structure as st
 
 app = flask.Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'scan-entry-secret-2026')
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 logger = logging.getLogger('scan_entry')
 logger.setLevel(logging.INFO)
@@ -76,7 +78,8 @@ def get_pdf(name):
 
 @app.route('/')
 def index():
-    return flask.render_template('index.html', pdfs=list_pdfs(), header=HEADER, item_count=ITEM_COUNT)
+    import time
+    return flask.render_template('index.html', pdfs=list_pdfs(), header=HEADER, item_count=ITEM_COUNT, _ts=int(time.time()))
 
 
 @app.route('/upload', methods=['POST'])
