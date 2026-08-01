@@ -18,6 +18,9 @@
   .pdf-btn { padding: 5px 10px; margin: 2px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; }
   .pdf-btn:hover { background: #f5f5f5; }
   .pdf-btn.on { background: #4285f4; color: #fff; border-color: #4285f4; }
+  .nav-btn { padding: 5px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .nav-btn:hover { background: #f5f5f5; }
+  .nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .page-body { display: flex; gap: 12px; padding: 12px; }
   .scan-col { flex: 0 0 auto; max-width: 700px; }
   .table-col { flex: 1 1 auto; overflow-x: auto; }
@@ -47,6 +50,9 @@
   .msg { padding: 8px 14px; border-radius: 4px; margin: 10px 0; }
   .msg.ok { background: #e6f4ea; color: #1e7e34; }
   .msg.err { background: #fce8e6; color: #c5221f; }
+  .loading { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  .spinner { width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #4285f4; border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -58,9 +64,20 @@
     上傳 PDF
     <input type="file" id="pdfUpload" accept=".pdf" style="display:none">
   </label>
+  <span id="pageNav" style="display:none">
+    <button id="btnPrev" class="nav-btn">上一頁</button>
+    <span id="pageInfo"></span>
+    <button id="btnNext" class="nav-btn">下一頁</button>
+  </span>
   <span id="dateInfo"></span>
   <span id="msg" class="msg" style="display:none"></span>
+  <button id="btnAdd" class="primary" style="display:none">加入集合</button>
   <button id="btnExport" class="primary">匯出 CSV</button>
+  <span id="collInfo" class="badge" style="display:none;background:#f0ad4e">集合: 0</span>
+  <div id="loading" class="loading" style="display:none">
+    <div class="spinner"></div>
+    <span>處理中...</span>
+  </div>
 </header>
 <main id="main"></main>
 
@@ -79,9 +96,12 @@ const AUTOS = ["日期","類型","番數","時段"];
 
 let analysisData = null;
 let pdfName = "";
+let currentPage = 1;
+let totalPages = 0;
 let selections = {};   // page -> Set(bandIndex)
 let dups = {};         // "page:band" -> 額外重複列數
 const pageImages = {}; // page -> HTMLImageElement
+let collectionCount = 0;
 
 function $(id){ return document.getElementById(id); }
 
@@ -90,6 +110,19 @@ function showMsg(text, ok){
   m.textContent = text;
   m.className = "msg " + (ok ? "ok" : "err");
   m.style.display = "";
+}
+
+function showLoading(text){
+  const el = $("loading");
+  if (el) {
+    el.querySelector("span").textContent = text || "處理中...";
+    el.style.display = "";
+  }
+}
+
+function hideLoading(){
+  const el = $("loading");
+  if (el) el.style.display = "none";
 }
 
 function loadPdfs(){
@@ -108,7 +141,7 @@ function loadPdfs(){
     if (!file) return;
     const form = new FormData();
     form.append('file', file);
-    showMsg("上傳中...", true);
+    showLoading("上傳中...");
     fetch("/upload", { method: "POST", body: form })
       .then(r => r.json())
       .then(data => {
@@ -119,76 +152,198 @@ function loadPdfs(){
           showMsg("上傳失敗: " + (data.error || "?"), false);
         }
       })
-      .catch(() => showMsg("上傳失敗", false));
+      .catch(() => showMsg("上傳失敗", false))
+      .finally(hideLoading);
   };
+  $("btnPrev").onclick = () => { if (currentPage > 1) loadPage(currentPage - 1); };
+  $("btnNext").onclick = () => { if (currentPage < totalPages) loadPage(currentPage + 1); };
+  $("btnAdd").onclick = addToCollection;
+  $("btnExport").onclick = exportCollection;
 }
 
 async function openPdf(name){
   pdfName = name;
-  const res = await fetch("/api/pdf/" + encodeURIComponent(name));
-  if (!res.ok){ showMsg("無法分析 " + name, false); return; }
-  analysisData = await res.json();
-  selections = {};
-  dups = {};
-  analysisData.pages.forEach((p, i) => { selections[i] = new Set(); });
-  $("dateInfo").textContent = analysisData.date_iso + " (" + analysisData.date_disp + ")";
-  buildMain();
+  currentPage = 1;
+  totalPages = 0;
+  collectionCount = 0;
+  updateCollInfo();
+  showPageNav(false);
+  showLoading("分析 PDF 結構...");
+  try {
+    const res = await fetch("/api/pdf/" + encodeURIComponent(name));
+    if (!res.ok){ showMsg("無法分析 " + name, false); return; }
+    const data = await res.json();
+    totalPages = data.pages.length;
+    showPageNav(true);
+    await loadPage(currentPage);
+    showMsg("載入完成 (共 " + totalPages + " 頁)", true);
+  } catch (e) {
+    showMsg("載入失敗: " + e.message, false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function loadPage(page){
+  currentPage = page;
+  showLoading("OCR 辨識第 " + page + " 頁...");
+  try {
+    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + page);
+    if (!res.ok){ showMsg("無法載入第 " + page + " 頁", false); return; }
+    analysisData = { pages: [await res.json()] };
+    selections = { 0: new Set() };
+    dups = {};
+    $("pageInfo").textContent = page + " / " + totalPages;
+    $("btnPrev").disabled = page <= 1;
+    $("btnNext").disabled = page >= totalPages;
+    $("btnAdd").style.display = "";
+    buildMain();
+    showMsg("第 " + page + " 頁載入完成", true);
+  } catch (e) {
+    showMsg("載入失敗: " + e.message, false);
+  } finally {
+    hideLoading();
+  }
+}
+
+function showPageNav(show){
+  $("pageNav").style.display = show ? "inline" : "none";
+}
+
+function updateCollInfo(){
+  $("collInfo").textContent = "集合: " + collectionCount;
+  $("collInfo").style.display = collectionCount > 0 ? "inline-block" : "none";
+}
+
+async function addToCollection(){
+  const rows = collectRows();
+  if (!rows.length){ showMsg("沒有選取任何列", false); return; }
+  const pageData = analysisData.pages[0];
+  const body = {
+    pdf: pdfName,
+    page: currentPage,
+    date_iso: pageData.date_iso || '',
+    date_roc: pageData.date_roc || '',
+    date_disp: pageData.date_disp || '',
+    type: pageData.type || '',
+    rows: rows
+  };
+  showLoading("加入集合...");
+  try {
+    const res = await fetch("/api/collection", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const out = await res.json();
+    if (out.ok){
+      collectionCount = out.count;
+      updateCollInfo();
+      showMsg("已加入集合 (共 " + collectionCount + " 頁)", true);
+    } else {
+      showMsg("加入失敗: " + (out.error || "?"), false);
+    }
+  } catch (e) {
+    showMsg("加入失敗", false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function exportCollection(){
+  showLoading("從集合匯出 CSV...");
+  try {
+    const res = await fetch("/api/collection");
+    const coll = await res.json();
+    if (!coll.items.length){ showMsg("集合為空，請先加入頁面", false); return; }
+    const allRows = [];
+    let date_iso = '', date_roc = '';
+    coll.items.forEach(item => {
+      date_iso = item.date_iso || date_iso;
+      date_roc = item.date_roc || date_roc;
+      item.rows.forEach(r => allRows.push(r));
+    });
+    const body = {
+      pdf: pdfName,
+      date_iso: date_iso,
+      date_roc: date_roc,
+      rows: allRows
+    };
+    const expRes = await fetch("/export", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const out = await expRes.json();
+    if (out.ok){
+      showMsg("已匯出 " + out.path + " (" + out.rows + " 列, " + coll.count + " 頁)", true);
+    } else {
+      showMsg("匯出失敗: " + (out.error || "?"), false);
+    }
+  } catch (e) {
+    showMsg("匯出失敗", false);
+  } finally {
+    hideLoading();
+  }
 }
 
 function buildMain(){
   const main = $("main");
   main.innerHTML = "";
-  analysisData.pages.forEach((p, i) => {
-    const pageEl = document.createElement("section");
-    pageEl.className = "page";
-    pageEl.id = "page-" + i;
+  if (!analysisData.pages.length) return;
+  const p = analysisData.pages[0];
+  const i = 0;
 
-    const head = document.createElement("div");
-    head.className = "page-head";
-    const h3 = document.createElement("h3");
-    h3.textContent = "第 " + (i+1) + " 頁";
-    head.appendChild(h3);
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = p.type;
-    head.appendChild(badge);
-    const lbl = document.createElement("span");
-    lbl.textContent = "時段:";
-    head.appendChild(lbl);
-    const sel = document.createElement("select");
-    sel.dataset.page = i;
-    ["上午","下午"].forEach(s => {
-      const o = document.createElement("option");
-      o.value = s; o.textContent = s;
-      sel.appendChild(o);
-    });
-    if (p.shift) sel.value = p.shift;
-    sel.onchange = () => updateAutoColumn(i, "時段", sel.value);
-    head.appendChild(sel);
-     const info = document.createElement("span");
-     info.style.color = "#666";
-     info.textContent = p.shift ? ("偵測:" + p.shift + " (可靠度 " + p.shift_conf + ")") : "時段未偵測";
-     head.appendChild(info);
-     if (p.auto_fields && Object.keys(p.auto_fields).length > 0) {
-       const ocrBadge = document.createElement("span");
-       ocrBadge.className = "badge";
-       ocrBadge.style.background = "#34a853";
-       ocrBadge.textContent = "OCR 預填";
-       head.appendChild(ocrBadge);
-     }
-    const addBtn = document.createElement("button");
-    addBtn.textContent = "+ 新增列";
-    addBtn.onclick = () => addRow(i);
-    head.appendChild(addBtn);
-    const selAll = document.createElement("button");
-    selAll.textContent = "全選";
-    selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); buildTable(); };
-    head.appendChild(selAll);
-    const selNone = document.createElement("button");
-    selNone.textContent = "全不選";
-    selNone.onclick = () => { selections[i].clear(); syncPage(i); buildTable(); };
-    head.appendChild(selNone);
-    pageEl.appendChild(head);
+  const pageEl = document.createElement("section");
+  pageEl.className = "page";
+  pageEl.id = "page-" + i;
+
+  const head = document.createElement("div");
+  head.className = "page-head";
+  const h3 = document.createElement("h3");
+  h3.textContent = "第 " + currentPage + " 頁";
+  head.appendChild(h3);
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = p.type;
+  head.appendChild(badge);
+  const lbl = document.createElement("span");
+  lbl.textContent = "時段:";
+  head.appendChild(lbl);
+  const sel = document.createElement("select");
+  sel.dataset.page = i;
+  ["上午","下午"].forEach(s => {
+    const o = document.createElement("option");
+    o.value = s; o.textContent = s;
+    sel.appendChild(o);
+  });
+  if (p.shift) sel.value = p.shift;
+  sel.onchange = () => updateAutoColumn(i, "時段", sel.value);
+  head.appendChild(sel);
+  const info = document.createElement("span");
+  info.style.color = "#666";
+  info.textContent = p.shift ? ("偵測:" + p.shift + " (可靠度 " + p.shift_conf + ")") : "時段未偵測";
+  head.appendChild(info);
+  if (p.auto_fields && Object.keys(p.auto_fields).length > 0) {
+    const ocrBadge = document.createElement("span");
+    ocrBadge.className = "badge";
+    ocrBadge.style.background = "#34a853";
+    ocrBadge.textContent = "OCR 預填";
+    head.appendChild(ocrBadge);
+  }
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+ 新增列";
+  addBtn.onclick = () => addRow(i);
+  head.appendChild(addBtn);
+  const selAll = document.createElement("button");
+  selAll.textContent = "全選";
+  selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); buildTable(); };
+  head.appendChild(selAll);
+  const selNone = document.createElement("button");
+  selNone.textContent = "全不選";
+  selNone.onclick = () => { selections[i].clear(); syncPage(i); buildTable(); };
+  head.appendChild(selNone);
+  pageEl.appendChild(head);
 
     const body = document.createElement("div");
     body.className = "page-body";
@@ -217,9 +372,8 @@ function buildMain(){
 
     drawPage(i, canvas, chips);
     buildChips(i, chips);
-  });
-  buildTable();
-}
+    buildTable();
+  }
 
 function drawPage(i, canvas, chips){
   const p = analysisData.pages[i];
@@ -338,6 +492,8 @@ function updateAutoColumn(i, col, value){
 }
 
 function buildTable(){
+  showLoading("載入表格...");
+  try {
   const old = document.querySelector(".table-wrap");
   if (old) old.remove();
 
@@ -511,25 +667,11 @@ function buildTable(){
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
-  // Group tables by page and append to per-page table columns
-  const pageTables = {};
-  items.forEach(it => {
-    const key = it.page;
-    if (!pageTables[key]) pageTables[key] = document.createElement("div");
-  });
-  const tempDiv = document.createElement("div");
-  tempDiv.appendChild(wrap);
-  const tables = tempDiv.querySelectorAll("table.grid");
-  tables.forEach(t => {
-    const rows = t.querySelectorAll('tr[data-page]');
-    if (rows.length === 0) return;
-    const page = rows[0].dataset.page;
-    const col = $("table-col-" + page);
-    if (col) {
-      col.innerHTML = "";
-      col.appendChild(t);
-    }
-  });
+  const col = $("table-col-0");
+  if (col) {
+    col.innerHTML = "";
+    col.appendChild(wrap);
+  }
 }
 
 function shiftValue(p){

@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""掃描輸入工具 B MVP:PDF → 版面分析 → 網頁手動輸入 → 39欄 CSV"""
+"""掃描輸入工具 B MVP:PDF → 單頁聚焦 → 集合匯出 → 39欄 CSV"""
 import csv
 import glob
 import os
 import re
 import sys
+import json
+import uuid
+from datetime import datetime
 
 import cv2
 import flask
@@ -20,6 +23,7 @@ import analysis
 import structure as st
 
 app = flask.Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET', 'scan-entry-secret-2026')
 
 
 def load_item_count():
@@ -45,6 +49,9 @@ HEADER = ["日期", "類型", "番數", "序", "品項", "時段", "生產數量
           "蒸養池", "入池時間", "蒸養溫度1", "蒸養溫度2", "蒸養溫度3",
           "蒸養階段1", "蒸養階段2", "蒸養階段3", "位置",
           "排列1", "排列2", "排列3", "排列4", "排列5", "排列6"]
+
+# In-memory collection: {session_id: [page_data, ...]}
+COLLECTIONS = {}
 
 
 def list_pdfs():
@@ -78,10 +85,77 @@ def upload():
 
 @app.route('/api/pdf/<path:name>')
 def api_pdf(name):
+    """Full PDF analysis (structure only, no OCR). Returns all pages."""
     path = get_pdf(name)
     if not path:
         return flask.jsonify({'error': 'not found'}), 404
     return flask.jsonify(analysis.analyze_pdf(path))
+
+
+@app.route('/api/pdf/<path:name>/<int:page>')
+def api_pdf_page(name, page):
+    """Single page analysis with OCR. Returns one page with auto_fields."""
+    path = get_pdf(name)
+    if not path:
+        return flask.jsonify({'error': 'not found'}), 404
+    pages = st.render_pages(path, 200)
+    if page < 1 or page > len(pages):
+        return flask.jsonify({'error': 'invalid page'}), 404
+    result = analysis.page_analysis(path, page - 1)
+    return flask.jsonify(result)
+
+
+@app.route('/api/pdf/<path:name>/<int:page>/ocr', methods=['POST'])
+def api_pdf_page_ocr(name, page):
+    """Re-trigger OCR for a single page (e.g., after user修正)."""
+    path = get_pdf(name)
+    if not path:
+        return flask.jsonify({'error': 'not found'}), 404
+    pages = st.render_pages(path, 200)
+    if page < 1 or page > len(pages):
+        return flask.jsonify({'error': 'invalid page'}), 404
+    result = analysis.page_analysis(path, page - 1)
+    return flask.jsonify(result)
+
+
+@app.route('/api/collection', methods=['GET'])
+def get_collection():
+    """Get current session's collection."""
+    sid = flask.session.get('sid') or str(uuid.uuid4())
+    flask.session['sid'] = sid
+    coll = COLLECTIONS.get(sid, [])
+    return flask.jsonify({'items': coll, 'count': len(coll)})
+
+
+@app.route('/api/collection', methods=['POST'])
+def add_to_collection():
+    """Add current page's rows to collection."""
+    sid = flask.session.get('sid') or str(uuid.uuid4())
+    flask.session['sid'] = sid
+    data = flask.request.get_json(force=True)
+    page_data = {
+        'pdf': data.get('pdf'),
+        'page': data.get('page'),
+        'date_iso': data.get('date_iso'),
+        'date_roc': data.get('date_roc'),
+        'date_disp': data.get('date_disp'),
+        'type': data.get('type'),
+        'rows': data.get('rows', []),
+        'added_at': datetime.now().isoformat(),
+    }
+    if sid not in COLLECTIONS:
+        COLLECTIONS[sid] = []
+    COLLECTIONS[sid].append(page_data)
+    return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
+
+
+@app.route('/api/collection', methods=['DELETE'])
+def clear_collection():
+    """Clear collection."""
+    sid = flask.session.get('sid')
+    if sid and sid in COLLECTIONS:
+        del COLLECTIONS[sid]
+    return flask.jsonify({'ok': True})
 
 
 @app.route('/img/<path:name>/<int:page>')
@@ -107,40 +181,8 @@ def img(name, page):
     return flask.send_file(cache_png, mimetype='image/png')
 
 
-@app.route('/arrange/<path:name>/<int:page>/<int:band>')
-def arrange(name, page, band):
-    """中型 C12 模具排列順序:每番次 4 格(4 個模具欄位)合成圖。"""
-    path = get_pdf(name)
-    if not path:
-        return flask.abort(404)
-    res = analysis.page_analysis(path, page - 1)
-    if res.get('type') != '中型' or not res.get('arrange') or band not in res['arrange']:
-        return flask.abort(404)
-    img = st.render_pages(path, 200)[page - 1]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    boxes = res['arrange'][band]
-    scale, pad = 2, 8
-    cw = max(b[2] for b in boxes) * scale + pad * 2
-    ch = max(b[3] for b in boxes) * scale + pad * 2
-    out = np.full((ch, 4 * cw, 3), 255, np.uint8)
-    for idx, (bx, by, bw, bh) in enumerate(boxes[:4]):
-        by = min(by, gray.shape[0] - bh)
-        bx = min(bx, gray.shape[1] - bw)
-        crop = gray[by:by + bh, bx:bx + bw]
-        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        crop = cv2.cvtColor(crop, cv2.COLOR_GRAY2BGR)
-        x0, y0 = idx * cw + pad, pad
-        out[y0:y0 + crop.shape[0], x0:x0 + crop.shape[1]] = crop
-        cv2.rectangle(out, (x0, y0), (x0 + crop.shape[1] - 1, y0 + crop.shape[0] - 1), (0, 0, 0), 1)
-    ok, buf = cv2.imencode('.png', out)
-    resp = flask.Response(buf.tobytes(), mimetype='image/png')
-    resp.headers['Cache-Control'] = 'no-store'
-    return resp
-
-
 @app.route('/crop/<path:name>/<int:page>/<int:band>/<area>')
 def crop(name, page, band, area):
-    """中型表單子欄 crop 預覽: area = c14_0..2, c15_0..2, centrifuge"""
     path = get_pdf(name)
     if not path:
         return flask.abort(404)
