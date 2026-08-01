@@ -672,6 +672,8 @@ function buildTable(){
     col.innerHTML = "";
     col.appendChild(wrap);
   }
+} finally {
+  hideLoading();
 }
 
 function shiftValue(p){
