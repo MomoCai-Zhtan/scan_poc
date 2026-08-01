@@ -94,6 +94,21 @@ def ocr_band_with_header(pdf_path, page_index, y0, y1, x0=80, x1=1600,
     return ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
 
 
+def _extract_c14c15(r1, col_idx):
+    """Extract sub-row values from a C14 or C15 cell.
+
+    C14/C15 cells contain 3 sub-rows of handwritten digits, either as a single
+    digit (e.g. "60") or space-separated (e.g. "60 90 90" for 3 sub-rows).
+    Returns list of up to 3 digit strings.
+    """
+    import re
+    if col_idx >= len(r1):
+        return []
+    cell = r1[col_idx].strip()
+    nums = re.findall(r'\d+', cell)
+    return nums[:3]
+
+
 def parse_mid_table(markdown):
     """Parse Mistral OCR markdown table into structured field values for medium form.
 
@@ -233,6 +248,9 @@ def parse_mid_table(markdown):
             'speeds': speeds,
             'speed_times': speed_times,
             'steam_pool': pool,
+            'arrange': '',
+            'c14': _extract_c14c15(r1, 13),
+            'c15': _extract_c14c15(r1, 14),
         }
         band_idx += 1
         i += 2
@@ -240,7 +258,59 @@ def parse_mid_table(markdown):
     return bands
 
 
-def parse_arrange_circles(markdown):
+def _stack_cells(img, cells, scale=5, pad=24):
+    """Stack multiple crop cells vertically into one padded, enlarged image."""
+    import numpy as np
+    crops = []
+    for sx, sy, sw, sh in cells:
+        sy = min(max(sy, 0), img.shape[0] - sh)
+        sx = min(max(sx, 0), img.shape[1] - sw)
+        crop = img[sy:sy + sh, sx:sx + sw]
+        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        crops.append(crop)
+    if not crops:
+        return None
+    h_max = max(c.shape[0] for c in crops)
+    w_max = max(c.shape[1] for c in crops)
+    canvas = np.full((h_max * len(crops) + pad * 2 * len(crops), w_max + pad * 2, 3), 255, np.uint8)
+    y = 0
+    for c in crops:
+        canvas[y + pad:y + pad + c.shape[0], pad:pad + c.shape[1]] = c
+        y += c.shape[0] + pad * 2
+    return canvas
+
+
+def _ink_density(gray_img):
+    """Return fraction of non-white pixels (0-1) for a grayscale crop."""
+    if gray_img is None or gray_img.size == 0:
+        return 0
+    return float(np.sum(gray_img < 200)) / gray_img.size
+
+
+def ocr_c14c15_crop(pdf_path, page_index, cells, scale=5, pad=24, min_ink=0.02):
+    """Crop multiple C14/C15 sub-cells, stack vertically, enlarge, send to OCR.
+
+    C14/C15 cells are narrow (72x58px) — 5x enlargement gives ~360x290px.
+    Skips OCR if ink density is too low (sparse handwriting = not worth API call).
+    Returns markdown string, or None if skipped/failed.
+    """
+    pages = st.render_pages(pdf_path, 200)
+    img = pages[page_index]
+    bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    # Check ink density of first cell — if too sparse, skip
+    if cells:
+        sx, sy, sw, sh = cells[0]
+        sy = min(max(sy, 0), img.shape[0] - sh)
+        sx = min(max(sx, 0), img.shape[1] - sw)
+        cell_gray = cv2.cvtColor(img[sy:sy + sh, sx:sx + sw], cv2.COLOR_RGB2GRAY)
+        if _ink_density(cell_gray) < min_ink:
+            return None
+
+    canvas = _stack_cells(img, cells, scale=scale, pad=pad)
+    if canvas is None:
+        return None
+    return ocr_image(canvas)
     """Parse circled digits from a C13 (模具排列順序) crop markdown.
 
     Returns list of up to 4 digit strings, in reading order (left→right).

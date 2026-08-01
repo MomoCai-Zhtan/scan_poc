@@ -211,6 +211,10 @@ def _band_missing(b):
     nonempty = sum(1 for x in (b.get('molds') or []) if x)
     if 0 < nonempty != 3:
         m.append('molds')
+    if not b.get('c14'):
+        m.append('c14')
+    if not b.get('c15'):
+        m.append('c15')
     return m
 
 
@@ -255,6 +259,11 @@ def _merge_band(t, s):
         s_c = s.get('centrifuge') or ('', '')
         if s_c[0]:
             t['centrifuge'] = [s_c[0], s_c[1]]
+    for k in ('c14', 'c15'):
+        tv = t.get(k) or []
+        sv = s.get(k) or []
+        if not tv and sv:
+            t[k] = sv
 
 
 def _retry_missing_bands(pdf_path, page_index, rows, bands, max_retry=4):
@@ -278,6 +287,58 @@ def _retry_missing_bands(pdf_path, page_index, rows, bands, max_retry=4):
         except Exception:
             continue
     return bands
+
+
+def _retry_c14c15(pdf_path, page_index, rows, bands, mid_layout):
+    """Per-cell crop OCR for C14/C15 sub-rows where full-page OCR returned empty.
+
+    C14/C15 cells are narrow (72x58px) — full-page OCR often misses them on
+    sparse-ink PDFs. This crops each column's 3 sub-cells as a single stacked
+    image at 3x enlargement (2 API calls per band instead of 6).
+    """
+    if not mid_layout or not mid_layout.get('bands'):
+        return bands
+    cell_bands = mid_layout['bands']
+    for bi in range(len(rows)):
+        if bi >= len(cell_bands):
+            continue
+        b = bands.get(bi, {})
+        c14 = b.get('c14', [])
+        c15 = b.get('c15', [])
+        if c14 and c15:
+            continue
+        layout = cell_bands[bi]
+
+        if not c14:
+            try:
+                md = ocrx.ocr_c14c15_crop(pdf_path, page_index, layout['c14_cells'])
+                if md:
+                    b['c14'] = _extract_2digit(md)[:3]
+            except Exception:
+                pass
+            if 'c14' not in b:
+                b['c14'] = []
+
+        if not c15:
+            try:
+                md = ocrx.ocr_c14c15_crop(pdf_path, page_index, layout['c15_cells'])
+                if md:
+                    b['c15'] = _extract_2digit(md)[:3]
+            except Exception:
+                pass
+            if 'c15' not in b:
+                b['c15'] = []
+    return bands
+
+
+def _extract_2digit(markdown):
+    """Extract 2-digit number strings from OCR markdown (for C14/C15 temps/times)."""
+    import re
+    out = []
+    for line in markdown.split('\n'):
+        for n in re.findall(r'(\d{2})', line):
+            out.append(n)
+    return out[:3]
 
 
 def _add_arrange_order(pdf_path, page_index, rows, bands, arrange_boxes):
@@ -324,12 +385,13 @@ def _add_arrange_order(pdf_path, page_index, rows, bands, arrange_boxes):
         b['arrange_conflict'] = conflict
 
 
-def ocr_auto_fields(pdf_path, page_index, rows, arrange_boxes=None):
+def ocr_auto_fields(pdf_path, page_index, rows, arrange_boxes=None, mid_layout=None):
     """Hybrid OCR for auto-fillable fields.
 
     Strategy: full-page OCR first (1 API call), then per-band crop retry for
     bands with missing fields (sparse-ink columns), then C13 circled-digit OCR
-    per band for the 模具排列順序 cross-check.
+    per band for the 模具排列順序 cross-check, then per-cell C14/C15 crop retry
+    for narrow-column sparse ink.
 
     Returns dict {band_index: {field_name: value}} per band.
     """
@@ -342,6 +404,7 @@ def ocr_auto_fields(pdf_path, page_index, rows, arrange_boxes=None):
         bands = _retry_missing_bands(pdf_path, page_index, rows, bands)
         if arrange_boxes:
             _add_arrange_order(pdf_path, page_index, rows, bands, arrange_boxes)
+        bands = _retry_c14c15(pdf_path, page_index, rows, bands, mid_layout)
         return bands
     except Exception:
         return {}
@@ -375,7 +438,7 @@ def page_analysis(pdf_path, page_index, ocr_arrange=True):
                 'cols': cols,
                 'bands': [mid_band_layout(y0, y1, cols) for y0, y1 in rows],
             }
-        result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange)
+        result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))
     return result
 
 

@@ -119,7 +119,13 @@
 
 ## 4. 開發里程碑
 
-### M1: 中型子列切割 (C14/C15 3 子列)
+### M1-M4: C14/C15 子列切割 + 離心時間 (已完成, 更新 2026-08-01)
+- M1: ✅ C14/C15 3 子列 `mid_band_layout()` 實現 (c14_cells/c15_cells)
+- M2: ✅ 離心時間 `parse_mid_table()` 自動解析 (centrifuge start/end)
+- M3: ✅ UI `index.html` 顯示 C14/C15 crop preview + auto-fill
+- M4: ✅ CSV mapping: 離心開始/結束 → CSV columns 14/15
+
+### M5: 混合 OCR 策略 (2026-07-31)
 **目標**: 將 C14 (蒸養溫度1-3) 和 C15 (蒸養時間1-3) 正確切割為 3 子列。
 
 **技術方案**:
@@ -131,13 +137,12 @@
 **預期成果**: `page_analysis()` 回傳 C14/C15 的 3 子列座標
 
 ### M2: 離心時間欄位 (C3~C7 R2)
-**目標**: 擷取離心開始/結束時間。
+**目標**: 擷取離心開始/結束時間，對應到 CSV。
 
 **技術方案**:
 - R2 分隔線 y 座標 = band_y0 + 176 (來自 ink 分析)
-- C3~C7 R2 → `離心開始` (左半) + `離心結束` (右半)
-
-**預期成果**: `page_analysis()` 回傳 `centrifuge_times` 座標
+- C3~C7 R2 → `centrifuge` (start, end) tuple in auto_fields
+- CSV mapping: 離心開始→column 14, 離心結束→column 15 ✅
 
 ### M3: UI 更新 — 子列顯示
 **目標**: 在 `index.html` 中顯示 C14/C15 的 3 子列 crop。
@@ -165,7 +170,17 @@
 - 離心時間: 0/6 = 0%
 
 ### 方案 B: Mistral OCR (cloud) + 整頁 OCR
-**93.1% 準確率** (67/72 fields correct, 1150729.pdf)
+**98.6% 準確率** (71/72 fields correct, 1150729.pdf)
+
+| 欄位 | GT | OCR | 結果 |
+|------|-----|-----|------|
+| 品項 | 800, 800, 700, 400加厚 | 800, 800, 700, 400加厚 | ✅ 100% (normalize_item) |
+| 模具編號 | 3,4,1; 5,6,2; 5,3,6; 3,16,15,14 | 3,4,1; 5,6,2; 5,3,6; 3,16,15,14 | ✅ 100% (band retry) |
+| 離心時間 | 0750~0830 | 0750~0830 | ✅ 100% |
+| 轉速 | all 16 values | all 16 values | ✅ 100% |
+| 轉速時間 | all 16 values | all 16 values | ✅ 100% |
+| 蒸養池 | 4,2,3,1 | 4,2,3,1 | ✅ 100% |
+| C14/C15 | 60/90/90, 30/60/90 | (empty) | ❌ (sparse ink, manual input)
 
 | 欄位 | GT | OCR | 結果 |
 |------|-----|-----|------|

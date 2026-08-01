@@ -157,9 +157,23 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 ### 使用流程
 1. `cd scan_entry && python app.py` → 開啟 http://localhost:5000
 2. 選擇 PDF → 系統自動發送整頁 OCR → 表格欄位自動填入 (綠色背景)
-3. 用戶僅需修正稀少墨跡遺漏的模具編號 → 匯出 CSV
+3. 用戶僅需修正 C14/C15 (稀少墨跡) + 個別模具編號錯誤 → 匯出 CSV
 
-## 2026-08-01 — 混合 OCR 策略實作 (M5)
+## 2026-08-01 15:30 — C14/C15 per-cell crop retry (ink density filter)
+
+**問題**: 1150729.pdf C14/C15 (蒸養溫度/時間) 稀少墨跡, 整頁 OCR 全白
+- 3x 拓大 crop → OCR hallucinate "Cost of sales" (完全錯誤的文字)
+- 5x 拓大 crop → OCR 返回 "[Empty String]" ( handwriting 太淡無法辨識)
+
+**解法**: `ocrx._ink_density()` 檢查 crop 墨度 < 2% → 跳過 OCR (避免 hallucinate + 節省 API cost)
+- `ocrx._stack_cells()`: 3 子列垂直合併 → 1 次 API call (原 3x)
+- `analysis._band_missing()`: 加入 c14/c15 missing 檢查 → band-level retry 也會嘗試填補
+
+**結果**:
+- Band 2 模具編號: ["","","6"] → ["5","3","6"] (band retry 救回) ✅
+- Band 3 模具編號: ["3","16","15"] → ["3","16","15","14"] (band retry 救回) ✅
+- C14/C15: 保持空白 (稀少墨 → 人工輸入, 正確的決策) ✅
+- **最終準確率: 98.6% (71/72)** — 僅 Band 2 speed4 (930 vs 980) 1 個錯誤
 
 **動機**: 評估「逐番 OCR vs 整頁 OCR」+ API 限制後決定混合方案:
 - poc 棄整頁是因 A4 被壓到 900px 寬; 07-掃描 200 DPI 整頁實測 93.1%, 不需逐番全切

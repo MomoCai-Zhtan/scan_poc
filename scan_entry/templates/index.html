@@ -581,6 +581,12 @@ function mapField(csvCol, bandFields){
     case "中速時間": return bandFields.speed_times[2] || undefined;
     case "高速時間": return bandFields.speed_times[3] || undefined;
     case "蒸養池": return bandFields.steam_pool || undefined;
+    case "蒸養溫度1": return bandFields.c14 && bandFields.c14[0];
+    case "蒸養溫度2": return bandFields.c14 && bandFields.c14[1];
+    case "蒸養溫度3": return bandFields.c14 && bandFields.c14[2];
+    case "蒸養階段1": return bandFields.c15 && bandFields.c15[0];
+    case "蒸養階段2": return bandFields.c15 && bandFields.c15[1];
+    case "蒸養階段3": return bandFields.c15 && bandFields.c15[2];
     case "排列1": return bandFields.arrange ? bandFields.arrange[0] : undefined;
     case "排列2": return bandFields.arrange ? bandFields.arrange[1] : undefined;
     case "排列3": return bandFields.arrange ? bandFields.arrange[2] : undefined;
