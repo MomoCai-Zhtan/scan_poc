@@ -2,9 +2,10 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>離心製管掃描輸入工具</title>
 <style>
-  :root { --line:#ccc; --head:#f0f0f0; --sel:rgba(66,133,244,.25); }
+  :root { --line:#ccc; --head:#f0f0f0; --blue:#4285f4; --green:#34a853; --warn:#f0ad4e; }
   * { box-sizing: border-box; }
   body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: #fafafa; color: #222; }
   header { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px; position: sticky; top: 0; z-index: 10;
@@ -12,47 +13,81 @@
   header h1 { font-size: 18px; margin: 0 8px 0 0; }
   header select, header button, header input { font-size: 14px; padding: 6px 10px; }
   button { cursor: pointer; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
-  button.primary { background: #4285f4; color: #fff; border-color: #4285f4; }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
   .file-btn { display: inline-block; padding: 6px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 14px; }
-  .file-btn:hover { background: #f5f5f5; }
   .pdf-btn { padding: 5px 10px; margin: 2px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; }
   .pdf-btn:hover { background: #f5f5f5; }
-  .pdf-btn.on { background: #4285f4; color: #fff; border-color: #4285f4; }
+  .pdf-btn.on { background: var(--blue); color: #fff; border-color: var(--blue); }
   .nav-btn { padding: 5px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: 13px; }
   .nav-btn:hover { background: #f5f5f5; }
-  .nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .page-body { display: flex; gap: 12px; padding: 12px; }
-  .scan-col { flex: 0 0 auto; max-width: 700px; }
-  .table-col { flex: 1 1 auto; overflow-x: auto; }
-  main { padding: 16px; }
-  .page { background: #fff; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 20px; overflow: hidden; }
-  .page-head { display: flex; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line);
-               background: var(--head); flex-wrap: wrap; }
-  .page-head h3 { margin: 0; font-size: 15px; }
-  .badge { background: #4285f4; color: #fff; border-radius: 3px; padding: 2px 8px; font-size: 13px; }
-  .page-body { display: flex; gap: 12px; padding: 12px; flex-wrap: wrap; }
-  canvas { max-width: 640px; width: 100%; height: auto; border: 1px solid var(--line); background: #fff; cursor: pointer; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; max-width: 300px; }
-  .chip { min-width: 30px; text-align: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px;
-          cursor: pointer; font-size: 13px; user-select: none; }
-  .chip.on { background: #4285f4; color: #fff; }
-  .table-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
-  table.grid { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
-  table.grid th, table.grid td { border: 1px solid var(--line); padding: 2px 4px; }
-  table.grid thead tr.group th { background: #e8f0fe; font-size: 12px; color: #444; }
-  table.grid thead tr.cols th { background: var(--head); }
-  table.grid td.auto { background: #fbfbfb; }
-  table.grid input { width: 62px; border: 1px solid transparent; padding: 3px; font-size: 13px; }
-  table.grid input:focus { border-color: #4285f4; outline: none; background: #fff; }
-  table.grid input.auto-fill { background: #e8f5e9; }
-  table.grid input.auto-warn { background: #fef9e7; border-color: #f0ad4e !important; }
-  table.grid td.copytd { text-align: center; }
-  .msg { padding: 8px 14px; border-radius: 4px; margin: 10px 0; }
+  .badge { background: var(--warn); color: #fff; border-radius: 3px; padding: 2px 8px; font-size: 13px; }
+  .msg { padding: 4px 10px; border-radius: 4px; font-size: 13px; }
   .msg.ok { background: #e6f4ea; color: #1e7e34; }
   .msg.err { background: #fce8e6; color: #c5221f; }
   .loading { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
-  .spinner { width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #4285f4; border-radius: 50%; animation: spin 1s linear infinite; }
+  .spinner { width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  main { padding: 16px; }
+  .layout-body { display: flex; gap: 12px; align-items: flex-start; }
+  .canvas-col { flex: 0 0 40%; min-width: 0; }
+  .canvas-wrap { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  canvas { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; cursor: pointer; display: block; }
+  .legend { margin-top: 6px; font-size: 12px; color: #666; }
+  .legend span { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: middle; }
+  .lg-cur { background: rgba(66,133,244,.3); border: 1px solid var(--blue); }
+  .lg-col { background: rgba(52,168,83,.25); border: 1px solid var(--green); }
+
+  .band-list { flex: 0 0 12%; min-width: 96px; max-width: 150px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .band-list h4 { margin: 0 0 8px; font-size: 13px; color: #444; }
+  .band-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px;
+               margin-bottom: 6px; cursor: pointer; font-size: 13px; user-select: none; }
+  .band-item:hover { background: #f5f5f5; }
+  .band-item.on { background: #e8f0fe; border-color: var(--blue); }
+  .band-item.collected { border-color: var(--green); background: #e6f4ea; }
+  .band-item .ck { width: 16px; height: 16px; border: 1px solid #999; border-radius: 3px; font-size: 12px; line-height: 14px;
+                   text-align: center; color: #fff; background: #fff; flex: 0 0 16px; }
+  .band-item.collected .ck { background: var(--green); border-color: var(--green); }
+  .band-item .num { font-weight: bold; }
+  .band-item.empty { color: #999; }
+  .band-empty-badge { background: #eee; color: #666; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
+  .cnt-badge { background: var(--blue); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
+
+  .form-col { flex: 1 1 48%; min-width: 0; }
+  .page-status { font-size: 13px; color: #666; margin-bottom: 8px; }
+  .stage-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .progress-bar { flex: 1; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--blue); width: 0; transition: width .2s ease; }
+  #stageLabel { font-size: 13px; color: #444; white-space: nowrap; }
+  .stage-card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
+  .stage-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .stage-head h4 { margin: 0; font-size: 15px; }
+  .collected-tag { background: var(--green); color: #fff; font-size: 12px; border-radius: 3px; padding: 2px 8px; }
+  .auto-info { background: #f8f9fa; border: 1px dashed var(--line); border-radius: 4px; padding: 6px 10px;
+               font-size: 13px; color: #555; margin-bottom: 12px; }
+  .field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .field-row label { flex: 0 0 132px; text-align: right; font-size: 14px; color: #333; }
+  .field-row input, .field-row select { flex: 1; min-width: 0; padding: 6px 8px; font-size: 14px;
+                                        border: 1px solid var(--line); border-radius: 4px; }
+  .field-row input:focus, .field-row select:focus { border-color: var(--blue); outline: none; }
+  .field-row input.has-ocr { background: #e8f5e9; }
+  .field-row input.auto-warn { background: #fef9e7; border-color: var(--warn) !important; }
+  .ocr-badge { background: var(--green); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 6px;
+               flex: 0 0 auto; }
+  .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .form-actions button { padding: 8px 16px; font-size: 14px; }
+  .shortcut-hint { font-size: 12px; color: #888; margin-top: 10px; line-height: 1.6; }
+  .hint { color: #888; padding: 24px; text-align: center; }
+  .empty-state { text-align: center; color: #888; padding: 60px 20px; font-size: 16px; }
+
+  @media (max-width: 768px) {
+    .layout-body { flex-direction: column; }
+    .canvas-col, .band-list, .form-col { width: 100%; flex: none; max-width: none; }
+    .band-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .band-item { margin-bottom: 0; }
+    .field-row label { flex: 0 0 96px; }
+  }
 </style>
 </head>
 <body>
@@ -71,15 +106,45 @@
   </span>
   <span id="dateInfo"></span>
   <span id="msg" class="msg" style="display:none"></span>
-  <button id="btnAdd" class="primary" style="display:none">加入集合</button>
+  <span id="collInfo" class="badge" style="display:none">已收集: 0</span>
   <button id="btnExport" class="primary">匯出 CSV</button>
-  <span id="collInfo" class="badge" style="display:none;background:#f0ad4e">集合: 0</span>
-  <div id="loading" class="loading" style="display:none">
-    <div class="spinner"></div>
-    <span>處理中...</span>
-  </div>
 </header>
-<main id="main"></main>
+<main id="main">
+  <div id="emptyState" class="empty-state">請選擇上方 PDF 開始審查</div>
+  <div id="layoutBody" class="layout-body" style="display:none">
+    <div class="canvas-col">
+      <div class="canvas-wrap">
+        <canvas id="scanCanvas"></canvas>
+        <div class="legend">藍色<span class="lg-cur"></span>目前番次&nbsp;&nbsp;綠色<span class="lg-col"></span>已收集</div>
+      </div>
+    </div>
+    <div class="band-list">
+      <h4>番次列表</h4>
+      <div id="bandList"></div>
+    </div>
+    <div class="form-col">
+      <div id="pageStatus" class="page-status"></div>
+      <div class="stage-progress">
+        <button id="btnStagePrev" class="nav-btn">上一步</button>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <span id="stageLabel"></span>
+        <button id="btnStageNext" class="nav-btn">下一步</button>
+      </div>
+      <div id="stageForm"></div>
+      <div class="form-actions">
+        <button id="btnAddBand" class="primary">加入集合 (Enter)</button>
+        <button id="btnResetBand">重置此番</button>
+      </div>
+      <div class="shortcut-hint">
+        快捷鍵: Enter=下一步/收集 · 1/2/3=切階段 · ←/→=切換番次 · Esc=清除欄位
+      </div>
+    </div>
+  </div>
+</main>
+<div id="loading" class="loading" style="display:none">
+  <div class="spinner"></div>
+  <span>處理中...</span>
+</div>
 
 <script>
 // Cache buster: reload if server restarted
@@ -90,23 +155,30 @@ window._ts = TS;
 const PDFS = {{ pdfs | tojson }};
 const HEADER = {{ header | tojson }};
 const ITEM_COUNT = {{ item_count | tojson }};
-const GROUPS = [
-  {label:"基本", cols:["序","品項","生產數量(支數)","生產量修正(+/-量)","位置"]},
-  {label:"轉位", cols:["轉位1","轉位2","轉位3","轉位4","轉位5","轉位6"]},
-  {label:"離心", cols:["離心開始","離心結束","加料轉速","慢速轉速","中速轉速","高速轉速","加料時間","慢速時間","中速時間","高速時間"]},
-  {label:"蒸養", cols:["蒸養池","入池時間","蒸養溫度1","蒸養溫度2","蒸養溫度3","蒸養階段1","蒸養階段2","蒸養階段3"]},
-  {label:"排列", cols:["排列1","排列2","排列3","排列4","排列5","排列6"]},
-];
-const AUTOS = ["日期","類型","番數","時段"];
 
-let analysisData = null;
+// 審查階段欄位劃分 (逐番審查:三個階段依序顯示)
+const STAGES = [
+  {name:"基本資料", cols:["序","品項","生產數量(支數)","生產量修正(+/-量)","位置","時段"]},
+  {name:"離心", cols:["轉位1","轉位2","轉位3","轉位4","轉位5","轉位6",
+                      "離心開始","離心結束","加料轉速","慢速轉速","中速轉速","高速轉速",
+                      "加料時間","慢速時間","中速時間","高速時間"]},
+  {name:"蒸養", cols:["蒸養池","入池時間","蒸養溫度1","蒸養溫度2","蒸養溫度3",
+                      "蒸養階段1","蒸養階段2","蒸養階段3","排列1","排列2","排列3","排列4","排列5","排列6"]},
+];
+const AUTO_COLS = ["日期", "類型", "番數"];   // 頁層級自動欄(不進階段表單)
+const SELECT_COLS = ["時段"];
+
 let pdfName = "";
 let currentPage = 1;
 let totalPages = 0;
-let selections = {};   // page -> Set(bandIndex)
-let dups = {};         // "page:band" -> 額外重複列數
-const pageImages = {}; // page -> HTMLImageElement
-let collectionCount = 0;
+let analysisData = null;      // 單頁分析 + auto_fields + 日期
+let currentBand = null;       // 當前選中番次 index
+let currentStage = 0;         // 0=基本 1=離心 2=蒸養
+let bandData = {};            // bandIdx -> {vals:{col:val}, ocr:{col:true}}
+let collectedBands = {};      // bandIdx -> 收集次數
+let collectionCount = 0;      // 集合總列數 (server count)
+let pageTotalBands = 0;
+const pageImages = {};
 
 function $(id){ return document.getElementById(id); }
 
@@ -116,135 +188,404 @@ function showMsg(text, ok){
   m.className = "msg " + (ok ? "ok" : "err");
   m.style.display = "";
 }
-
 function showLoading(text){
   const el = $("loading");
-  if (el) {
+  if (el){
     el.querySelector("span").textContent = text || "處理中...";
-    el.style.display = "";
+    el.style.display = "flex";
   }
 }
-
 function hideLoading(){
   const el = $("loading");
   if (el) el.style.display = "none";
 }
-
-function loadPdfs(){
-  const group = $("pdfGroup");
-  group.innerHTML = "";
-  PDFS.forEach(p => {
-    const btn = document.createElement("button");
-    btn.className = "pdf-btn";
-    btn.textContent = p;
-    btn.onclick = () => openPdf(p, btn);
-    group.appendChild(btn);
-  });
-  if (PdfS.length) openPdf(PdfS[0], group.children[0]);
-  $("pdfUpload").onchange = (ev) => {
-    const file = ev.target.files[0];
-    if (!file) return;
-    const form = new FormData();
-    form.append('file', file);
-    showLoading("上傳中...");
-    fetch("/upload", { method: "POST", body: form })
-      .then(r => r.json())
-      .then(data => {
-        if (data.ok){
-          showMsg("上傳成功: " + data.name, true);
-          location.reload();
-        } else {
-          showMsg("上傳失敗: " + (data.error || "?"), false);
-        }
-      })
-      .catch(() => showMsg("上傳失敗", false))
-      .finally(hideLoading);
-  };
-  $("btnPrev").onclick = () => { if (currentPage > 1) loadPage(currentPage - 1); };
-  $("btnNext").onclick = () => { if (currentPage < totalPages) loadPage(currentPage + 1); };
-  $("btnAdd").onclick = addToCollection;
-  $("btnExport").onclick = exportCollection;
+function showLayout(show){
+  $("layoutBody").style.display = show ? "flex" : "none";
+  $("emptyState").style.display = show ? "none" : "block";
 }
-
-async function openPdf(name){
-  pdfName = name;
-  currentPage = 1;
-  totalPages = 0;
-  collectionCount = 0;
-  updateCollInfo();
-  showPageNav(false);
-  showLoading("分析 PDF 結構...");
-  try {
-    const res = await fetch("/api/pdf/" + encodeURIComponent(name));
-    if (!res.ok){ showMsg("無法分析 " + name, false); return; }
-    const data = await res.json();
-    totalPages = data.pages.length;
-    showPageNav(true);
-    await loadPage(currentPage);
-    showMsg("載入完成 (共 " + totalPages + " 頁)", true);
-  } catch (e) {
-    showMsg("載入失敗: " + e.message, false);
-  } finally {
-    hideLoading();
-  }
-}
-
-async function loadPage(page){
-  currentPage = page;
-  showLoading("OCR 辨識第 " + page + " 頁...");
-  try {
-    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + page);
-    if (!res.ok){ showMsg("無法載入第 " + page + " 頁", false); return; }
-    analysisData = { pages: [await res.json()] };
-    selections = { 0: new Set() };
-    dups = {};
-    $("pageInfo").textContent = page + " / " + totalPages;
-    $("btnPrev").disabled = page <= 1;
-    $("btnNext").disabled = page >= totalPages;
-    $("btnAdd").style.display = "";
-    buildMain();
-    showMsg("第 " + page + " 頁載入完成", true);
-  } catch (e) {
-    showMsg("載入失敗: " + e.message, false);
-  } finally {
-    hideLoading();
-  }
-}
-
 function showPageNav(show){
   $("pageNav").style.display = show ? "inline" : "none";
 }
 
-function updateCollInfo(){
-  $("collInfo").textContent = "集合: " + collectionCount;
-  $("collInfo").style.display = collectionCount > 0 ? "inline-block" : "none";
+function bandInfo(k){
+  return analysisData && analysisData.auto_fields ? analysisData.auto_fields[k] : null;
+}
+function bandIsEmpty(k){
+  const af = analysisData.auto_fields;
+  if (!af) return false;              // 無 auto_fields(小型/OCR失敗)視為需審查
+  const b = af[k];
+  if (!b) return true;
+  return !Object.keys(b).some(key => {
+    const v = b[key];
+    if (Array.isArray(v)) return v.some(x => x);
+    return !!v;
+  });
+}
+function getVal(k, col){
+  const d = bandData[k];
+  return d ? (d.vals[col] || "") : "";
+}
+function setVal(k, col, v, ocr){
+  if (!bandData[k]) bandData[k] = {vals: {}, ocr: {}};
+  bandData[k].vals[col] = v;
+  if (ocr) bandData[k].ocr[col] = true;
+  else delete bandData[k].ocr[col];
 }
 
-async function addToCollection(){
-  const rows = collectRows();
-  if (!rows.length){ showMsg("沒有選取任何列", false); return; }
-  const pageData = analysisData.pages[0];
+function mapField(csvCol, bf){
+  if (!bf) return undefined;
+  switch (csvCol) {
+    case "品項": return bf.item || undefined;
+    case "轉位1": return bf.molds[0] || undefined;
+    case "轉位2": return bf.molds[1] || undefined;
+    case "轉位3": return bf.molds[2] || undefined;
+    case "轉位4": return bf.molds[3] || undefined;
+    case "轉位5": return bf.molds[4] || undefined;
+    case "轉位6": return bf.molds[5] || undefined;
+    case "離心開始": return bf.centrifuge[0] || undefined;
+    case "離心結束": return bf.centrifuge[1] || undefined;
+    case "加料轉速": return bf.speeds[0] || undefined;
+    case "慢速轉速": return bf.speeds[1] || undefined;
+    case "中速轉速": return bf.speeds[2] || undefined;
+    case "高速轉速": return bf.speeds[3] || undefined;
+    case "加料時間": return bf.speed_times[0] || undefined;
+    case "慢速時間": return bf.speed_times[1] || undefined;
+    case "中速時間": return bf.speed_times[2] || undefined;
+    case "高速時間": return bf.speed_times[3] || undefined;
+    case "蒸養池": return bf.steam_pool || undefined;
+    case "蒸養溫度1": return bf.c14 && bf.c14[0];
+    case "蒸養溫度2": return bf.c14 && bf.c14[1];
+    case "蒸養溫度3": return bf.c14 && bf.c14[2];
+    case "蒸養階段1": return bf.c15 && bf.c15[0];
+    case "蒸養階段2": return bf.c15 && bf.c15[1];
+    case "蒸養階段3": return bf.c15 && bf.c15[2];
+    case "排列1": return bf.arrange && bf.arrange[0];
+    case "排列2": return bf.arrange && bf.arrange[1];
+    case "排列3": return bf.arrange && bf.arrange[2];
+    case "排列4": return bf.arrange && bf.arrange[3];
+    case "排列5": return bf.arrange && bf.arrange[4];
+    case "排列6": return bf.arrange && bf.arrange[5];
+    default: return undefined;
+  }
+}
+
+function initBand(k){
+  if (bandData[k]) return;
+  bandData[k] = {vals: {}, ocr: {}};
+  const bf = bandInfo(k);
+  if (bf){
+    STAGES.forEach(s => s.cols.forEach(c => {
+      const v = mapField(c, bf);
+      if (v !== undefined && v !== null && v !== ""){
+        bandData[k].vals[c] = String(v);
+        bandData[k].ocr[c] = true;
+      }
+    }));
+  }
+  if (!bandData[k].vals["時段"]) bandData[k].vals["時段"] = analysisData.shift || "下午";
+  recomputeDerived(k);
+}
+
+function arrangeSource(k, pai){
+  let moldCount = 0;
+  const d = bandData[k] || {vals: {}};
+  for (let m = 1; m <= 6; m++){ if (d.vals["轉位" + m]) moldCount++; }
+  if (analysisData.type === "中型" && moldCount === 3){
+    if (pai === 1) return 0;   // 排列1 ← 轉位1
+    if (pai === 2) return 1;   // 排列2 ← 轉位2
+    if (pai === 3) return -1;  // 排列3 留空
+    if (pai === 4) return 2;   // 排列4 ← 轉位3
+    return -1;                 // 排列5/6 留空
+  }
+  return pai - 1;              // 排列(k+1) ← 轉位(k+1)
+}
+
+function recomputeDerived(k){
+  const d = bandData[k];
+  if (!d) return;
+  // 生產數量(支數) = 品項對照(支/模具) × 模具個數;僅空欄自動帶入
+  const item = (d.vals["品項"] || "").trim();
+  const per = ITEM_COUNT[item];
+  if (!d.vals["生產數量(支數)"] && per){
+    let n = 0;
+    for (let m = 1; m <= 6; m++){ if (d.vals["轉位" + m]) n++; }
+    if (n > 0) d.vals["生產數量(支數)"] = String(per * n);
+  }
+  // 排列:OCR 圈選值優先,無則依轉位(中型3模具特判);僅空欄自動帶入
+  const bf = bandInfo(k);
+  for (let p = 1; p <= 6; p++){
+    const col = "排列" + p;
+    if (d.vals[col]) continue;
+    const ocrArr = bf && bf.arrange ? (bf.arrange[p - 1] || "") : "";
+    if (ocrArr){ d.vals[col] = String(ocrArr); d.ocr[col] = true; }
+    else {
+      const src = arrangeSource(k, p);
+      if (src >= 0){
+        const zv = d.vals["轉位" + (src + 1)] || "";
+        if (zv) d.vals[col] = zv;
+      }
+    }
+  }
+}
+
+function syncFieldDom(col){
+  const inp = $("fld-" + col);
+  if (inp && bandData[currentBand]){
+    inp.value = bandData[currentBand].vals[col] || "";
+  }
+}
+
+function buildStageForm(){
+  const wrap = $("stageForm");
+  wrap.innerHTML = "";
+  if (currentBand === null){
+    wrap.innerHTML = '<div class="hint">請點擊左側番次 (或畫布) 開始逐番審查</div>';
+    updateProgress();
+    return;
+  }
+  recomputeDerived(currentBand);
+  const stage = STAGES[currentStage];
+  const card = document.createElement("div");
+  card.className = "stage-card";
+
+  const head = document.createElement("div");
+  head.className = "stage-head";
+  const title = document.createElement("h4");
+  title.textContent = "番 " + (currentBand + 1) + " · 階段 " + (currentStage + 1) + ": " + stage.name;
+  head.appendChild(title);
+  const cnt = collectedBands[currentBand] || 0;
+  if (cnt){
+    const tag = document.createElement("span");
+    tag.className = "collected-tag";
+    tag.textContent = "已收集 ×" + cnt;
+    head.appendChild(tag);
+  }
+  card.appendChild(head);
+
+  if (currentStage === 0){
+    const info = document.createElement("div");
+    info.className = "auto-info";
+    info.textContent = "日期 " + (analysisData.date_disp || "") +
+                       " · 類型 " + (analysisData.type || "") +
+                       " · 番數 " + (currentBand + 1);
+    card.appendChild(info);
+  }
+
+  stage.cols.forEach(col => {
+    const d = bandData[currentBand];
+    const row = document.createElement("div");
+    row.className = "field-row";
+    const lbl = document.createElement("label");
+    lbl.textContent = col;
+    lbl.htmlFor = "fld-" + col;
+    row.appendChild(lbl);
+
+    let inp;
+    if (SELECT_COLS.includes(col)){
+      inp = document.createElement("select");
+      ["上午", "下午"].forEach(s => {
+        const o = document.createElement("option");
+        o.value = s; o.textContent = s;
+        inp.appendChild(o);
+      });
+      inp.value = d.vals[col] || analysisData.shift || "下午";
+    } else {
+      inp = document.createElement("input");
+      inp.type = "text";
+      if (col === "序"){
+        inp.type = "number"; inp.min = 1;
+        inp.value = d.vals[col] || String((collectedBands[currentBand] || 0) + 1);
+      } else {
+        inp.value = d.vals[col] || "";
+      }
+    }
+    inp.id = "fld-" + col;
+    inp.dataset.col = col;
+    const handleEdit = () => {
+      setVal(currentBand, col, inp.value, false);
+      if (col === "品項" || col.startsWith("轉位")){
+        recomputeDerived(currentBand);
+        syncFieldDom("生產數量(支數)");
+        if (currentStage === 2) buildStageForm();
+      }
+      const badge = row.querySelector(".ocr-badge");
+      if (badge) badge.remove();
+      inp.classList.remove("has-ocr");
+    };
+    inp.oninput = handleEdit;
+    if (SELECT_COLS.includes(col)) inp.onchange = handleEdit;
+    row.appendChild(inp);
+
+    if (d.ocr[col] && d.vals[col]){
+      inp.classList.add("has-ocr");
+      const badge = document.createElement("span");
+      badge.className = "ocr-badge";
+      badge.textContent = "OCR";
+      row.appendChild(badge);
+    }
+    const bf = bandInfo(currentBand);
+    if (bf && bf.arrange_conflict && col.startsWith("排列")){
+      inp.classList.add("auto-warn");
+      inp.title = "OCR 排列順序與轉位不符,請人工確認";
+    }
+    card.appendChild(row);
+  });
+  wrap.appendChild(card);
+  updateProgress();
+}
+
+function updateProgress(){
+  const fill = $("progressFill");
+  const lbl = $("stageLabel");
+  fill.style.width = ((currentStage + 1) / STAGES.length * 100) + "%";
+  lbl.textContent = "階段 " + (currentStage + 1) + "/" + STAGES.length + " (" + STAGES[currentStage].name + ")";
+  $("btnStagePrev").disabled = currentStage === 0;
+  $("btnStageNext").disabled = currentStage >= STAGES.length - 1;
+}
+
+function nextStage(){
+  if (currentBand === null) return;
+  if (currentStage < STAGES.length - 1){ currentStage++; buildStageForm(); }
+  else collectBand();
+}
+function prevStage(){
+  if (currentStage > 0){ currentStage--; buildStageForm(); }
+}
+
+function buildBandList(){
+  const list = $("bandList");
+  list.innerHTML = "";
+  if (!analysisData || !analysisData.rows) return;
+  analysisData.rows.forEach((r, k) => {
+    const item = document.createElement("div");
+    item.className = "band-item";
+    const cnt = collectedBands[k] || 0;
+    const ck = document.createElement("span");
+    ck.className = "ck";
+    ck.textContent = cnt ? "✓" : "";
+    if (cnt) item.classList.add("collected");
+    if (k === currentBand) item.classList.add("on");
+    item.appendChild(ck);
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = (k + 1) + "番";
+    item.appendChild(num);
+    if (bandIsEmpty(k)){
+      item.classList.add("empty");
+      const b = document.createElement("span");
+      b.className = "band-empty-badge";
+      b.textContent = "空";
+      item.appendChild(b);
+    } else if (cnt > 1){
+      const b = document.createElement("span");
+      b.className = "cnt-badge";
+      b.textContent = "×" + cnt;
+      item.appendChild(b);
+    }
+    item.onclick = () => selectBand(k);
+    list.appendChild(item);
+  });
+}
+
+function drawCanvas(){
+  const canvas = $("scanCanvas");
+  const img = pageImages[currentPage];
+  if (!analysisData || !img) return;
+  if (canvas.width !== img.width){ canvas.width = img.width; canvas.height = img.height; }
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  (analysisData.rows || []).forEach((b, k) => {
+    const y = b[0], h = b[1] - b[0];
+    const isCur = k === currentBand;
+    const isCol = (collectedBands[k] || 0) > 0;
+    if (isCur){
+      ctx.fillStyle = "rgba(66,133,244,.25)";
+      ctx.strokeStyle = "#4285f4";
+    } else if (isCol){
+      ctx.fillStyle = "rgba(52,168,83,.14)";
+      ctx.strokeStyle = "#34a853";
+    } else {
+      ctx.fillStyle = "rgba(0,0,0,.05)";
+      ctx.strokeStyle = "#ccc";
+    }
+    ctx.fillRect(0, y, canvas.width, h);
+    ctx.lineWidth = isCur ? 3 : 1.2;
+    ctx.strokeRect(0, y, canvas.width, h);
+    ctx.fillStyle = isCur ? "#4285f4" : (isCol ? "#34a853" : "#888");
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillText((k + 1) + "番", 8, y + 18);
+  });
+}
+
+function selectBand(k){
+  if (k < 0 || !analysisData || k >= (analysisData.rows || []).length) return;
+  currentBand = k;
+  currentStage = 0;
+  initBand(k);
+  buildBandList();
+  drawCanvas();
+  buildStageForm();
+}
+
+function syncBandListAndCanvas(){
+  buildBandList();
+  drawCanvas();
+}
+
+function updateCollInfo(){
+  const el = $("collInfo");
+  el.textContent = "已收集: " + collectionCount;
+  el.style.display = collectionCount > 0 ? "inline-block" : "none";
+  const ps = $("pageStatus");
+  if (ps){
+    const done = Object.values(collectedBands).reduce((a, b) => a + b, 0);
+    ps.textContent = "本頁已收集: " + done + " / " + pageTotalBands +
+                     (analysisData ? "  (頁 " + currentPage + "/" + totalPages + ")" : "");
+  }
+}
+
+async function collectBand(){
+  if (currentBand === null){ showMsg("請先選擇番次", false); return; }
+  initBand(currentBand);
+  recomputeDerived(currentBand);
+  const d = bandData[currentBand];
+  if (!d.vals["序"]) d.vals["序"] = String((collectedBands[currentBand] || 0) + 1);
+  const row = {};
+  AUTO_COLS.forEach(c => {
+    if (c === "日期") row[c] = analysisData.date_iso || "";
+    else if (c === "類型") row[c] = analysisData.type || "";
+    else if (c === "番數") row[c] = String(currentBand + 1);
+  });
+  STAGES.forEach(s => s.cols.forEach(c => row[c] = d.vals[c] || ""));
   const body = {
     pdf: pdfName,
     page: currentPage,
-    date_iso: pageData.date_iso || '',
-    date_roc: pageData.date_roc || '',
-    date_disp: pageData.date_disp || '',
-    type: pageData.type || '',
-    rows: rows
+    band: currentBand,
+    date_iso: analysisData.date_iso || "",
+    date_roc: analysisData.date_roc || "",
+    date_disp: analysisData.date_disp || "",
+    type: analysisData.type || "",
+    shift: d.vals["時段"] || analysisData.shift || "",
+    fields: row
   };
   showLoading("加入集合...");
   try {
-    const res = await fetch("/api/collection", {
+    const res = await fetch("/api/collection/band", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body)
     });
     const out = await res.json();
     if (out.ok){
+      collectedBands[currentBand] = (collectedBands[currentBand] || 0) + 1;
       collectionCount = out.count;
+      bandData[currentBand].vals["序"] = "";   // 下次收集序號自動遞增
       updateCollInfo();
-      showMsg("已加入集合 (共 " + collectionCount + " 頁)", true);
+      syncBandListAndCanvas();
+      showMsg("已收集番" + (currentBand + 1) + " (集合共 " + collectionCount + " 列)", true);
+      const next = (analysisData.rows || []).findIndex((_, idx) => idx > currentBand && !(collectedBands[idx] || 0));
+      if (next >= 0) selectBand(next);
     } else {
       showMsg("加入失敗: " + (out.error || "?"), false);
     }
@@ -260,20 +601,19 @@ async function exportCollection(){
   try {
     const res = await fetch("/api/collection");
     const coll = await res.json();
-    if (!coll.items.length){ showMsg("集合為空，請先加入頁面", false); return; }
+    if (!coll.items.length){ showMsg("集合為空,請先加入番次", false); return; }
     const allRows = [];
     let date_iso = '', date_roc = '';
-    coll.items.forEach(item => {
-      date_iso = item.date_iso || date_iso;
-      date_roc = item.date_roc || date_roc;
-      item.rows.forEach(r => allRows.push(r));
+    coll.items.forEach(it => {
+      date_iso = it.date_iso || date_iso;
+      date_roc = it.date_roc || date_roc;
+      if (it.kind === "band") allRows.push(it.fields || {});
+      else (it.rows || []).forEach(r => allRows.push(r));
     });
-    const body = {
-      pdf: pdfName,
-      date_iso: date_iso,
-      date_roc: date_roc,
-      rows: allRows
-    };
+    if (!confirm("確定匯出 " + allRows.length + " 列至 " + (date_roc || "?") + " 的 CSV?")){
+      return;
+    }
+    const body = {pdf: pdfName, date_iso: date_iso, date_roc: date_roc, rows: allRows};
     const expRes = await fetch("/export", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -281,7 +621,7 @@ async function exportCollection(){
     });
     const out = await expRes.json();
     if (out.ok){
-      showMsg("已匯出 " + out.path + " (" + out.rows + " 列, " + coll.count + " 頁)", true);
+      showMsg("已匯出 " + out.path + " (" + out.rows + " 列)", true);
     } else {
       showMsg("匯出失敗: " + (out.error || "?"), false);
     }
@@ -292,488 +632,174 @@ async function exportCollection(){
   }
 }
 
-function buildMain(){
-  const main = $("main");
-  main.innerHTML = "";
-  if (!analysisData.pages.length) return;
-  const p = analysisData.pages[0];
-  const i = 0;
-
-  const pageEl = document.createElement("section");
-  pageEl.className = "page";
-  pageEl.id = "page-" + i;
-
-  const head = document.createElement("div");
-  head.className = "page-head";
-  const h3 = document.createElement("h3");
-  h3.textContent = "第 " + currentPage + " 頁";
-  head.appendChild(h3);
-  const badge = document.createElement("span");
-  badge.className = "badge";
-  badge.textContent = p.type;
-  head.appendChild(badge);
-  const lbl = document.createElement("span");
-  lbl.textContent = "時段:";
-  head.appendChild(lbl);
-  const sel = document.createElement("select");
-  sel.dataset.page = i;
-  ["上午","下午"].forEach(s => {
-    const o = document.createElement("option");
-    o.value = s; o.textContent = s;
-    sel.appendChild(o);
-  });
-  if (p.shift) sel.value = p.shift;
-  sel.onchange = () => updateAutoColumn(i, "時段", sel.value);
-  head.appendChild(sel);
-  const info = document.createElement("span");
-  info.style.color = "#666";
-  info.textContent = p.shift ? ("偵測:" + p.shift + " (可靠度 " + p.shift_conf + ")") : "時段未偵測";
-  head.appendChild(info);
-  if (p.auto_fields && Object.keys(p.auto_fields).length > 0) {
-    const ocrBadge = document.createElement("span");
-    ocrBadge.className = "badge";
-    ocrBadge.style.background = "#34a853";
-    ocrBadge.textContent = "OCR 預填";
-    head.appendChild(ocrBadge);
-  }
-  const addBtn = document.createElement("button");
-  addBtn.textContent = "+ 新增列";
-  addBtn.onclick = () => addRow(i);
-  head.appendChild(addBtn);
-  const selAll = document.createElement("button");
-  selAll.textContent = "全選";
-  selAll.onclick = () => { analysisData.pages[i].rows.forEach((_, k) => selections[i].add(k)); syncPage(i); buildTable(); };
-  head.appendChild(selAll);
-  const selNone = document.createElement("button");
-  selNone.textContent = "全不選";
-  selNone.onclick = () => { selections[i].clear(); syncPage(i); buildTable(); };
-  head.appendChild(selNone);
-  pageEl.appendChild(head);
-
-    const body = document.createElement("div");
-    body.className = "page-body";
-
-    const scanCol = document.createElement("div");
-    scanCol.className = "scan-col";
-    const canvas = document.createElement("canvas");
-    canvas.width = 1653; canvas.height = p.size[1];
-    canvas.dataset.page = i;
-    scanCol.appendChild(canvas);
-
-    const chips = document.createElement("div");
-    chips.className = "chips";
-    chips.id = "chips-" + i;
-    scanCol.appendChild(chips);
-
-    body.appendChild(scanCol);
-
-    const tableCol = document.createElement("div");
-    tableCol.className = "table-col";
-    tableCol.id = "table-col-" + i;
-    body.appendChild(tableCol);
-
-    pageEl.appendChild(body);
-    main.appendChild(pageEl);
-
-    drawPage(i, canvas, chips);
-    buildChips(i, chips);
-    buildTable();
-  }
-
-function drawPage(i, canvas, chips){
-  const p = analysisData.pages[i];
-  const img = new Image();
-  pageImages[i] = img;
-  canvas.onclick = (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const sx = parseFloat(canvas.dataset.scale);
-    const y = (ev.clientY - rect.top) * (canvas.height / rect.height) / sx;
-    let hit = -1;
-    bandRects(i).forEach(b => {
-      if (y >= b.y0 && y < b.y1) hit = b.k;
-    });
-    if (hit >= 0) toggleRow(i, hit);
-  };
-  img.onload = () => {
-    const ctx = canvas.getContext("2d");
-    const sx = canvas.width / img.width;
-    canvas.height = Math.round(img.height * sx);
-    canvas.dataset.scale = sx;
-    drawBands(i, canvas);
-  };
-  img.src = "/img/" + encodeURIComponent(pdfName) + "/" + p.page;
+function resetBand(){
+  if (currentBand === null) return;
+  delete bandData[currentBand];
+  initBand(currentBand);
+  buildStageForm();
+  showMsg("番" + (currentBand + 1) + " 已重置為 OCR 預填值", true);
 }
 
-function bandRects(i){
-  const p = analysisData.pages[i];
-  const bands = [];
-  p.rows.forEach((b, k) => bands.push({k, y0: b[0], y1: b[1]}));
-  const hs = p.rows.map(b => b[1] - b[0]).sort((a, b) => a - b);
-  const medH = hs.length ? hs[Math.floor(hs.length / 2)] : 60;
-  const lastY1 = p.rows.length ? p.rows[p.rows.length - 1][1] : 0;
-  const top = [...selections[i]].reduce((m, k) => Math.max(m, k), p.rows.length - 1);
-  for (let k = p.rows.length; k <= top; k++){
-    bands.push({k, y0: lastY1 + (k - p.rows.length) * medH, y1: lastY1 + (k - p.rows.length + 1) * medH});
-  }
-  return bands;
-}
-
-function drawBands(i, canvas){
-  const ctx = canvas.getContext("2d");
-  const sx = parseFloat(canvas.dataset.scale);
-  const img = pageImages[i];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  bandRects(i).forEach(b => {
-    const y = b.y0 * sx, h = (b.y1 - b.y0) * sx;
-    const on = selections[i].has(b.k);
-    ctx.fillStyle = on ? "rgba(66,133,244,.18)" : "rgba(0,0,0,.05)";
-    ctx.fillRect(0, y, canvas.width, h);
-    ctx.strokeStyle = on ? "#4285f4" : "#aaa";
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(0, y, canvas.width, h);
-    ctx.fillStyle = on ? "#fff" : "#666";
-    ctx.fillRect(6, y + 3, 34, 16);
-    ctx.fillStyle = on ? "#4285f4" : "#666";
-    ctx.font = "11px sans-serif";
-    ctx.fillText((b.k + 1) + "番", 9, y + 15);
-  });
-}
-
-function buildChips(i, chips){
-  const p = analysisData.pages[i];
-  chips.innerHTML = "";
-  p.rows.forEach((band, k) => {
-    const c = document.createElement("div");
-    c.className = "chip";
-    c.textContent = k + 1;
-    c.dataset.k = k;
-    c.onclick = () => toggleRow(i, k);
-    chips.appendChild(c);
-  });
-}
-
-function toggleRow(i, k){
-  const set = selections[i];
-  if (set.has(k)) set.delete(k); else set.add(k);
-  syncPage(i);
-  buildTable();
-}
-
-function syncPage(i){
-  const canvas = document.querySelector('canvas[data-page="' + i + '"]');
-  const chips = $("chips-" + i);
-  chips.querySelectorAll(".chip").forEach(ch => {
-    ch.classList.toggle("on", selections[i].has(parseInt(ch.dataset.k)));
-  });
-  if (canvas) drawBands(i, canvas);
-}
-
-function addRow(i){
-  const p = analysisData.pages[i];
-  const k = p.rows.length;
-  if (!selections[i].has(k)){
-    selections[i].add(k);
-  }
-  const chips = $("chips-" + i);
-  const c = document.createElement("div");
-  c.className = "chip on";
-  c.textContent = "＋" + (k + 1);
-  c.dataset.k = k;
-  c.onclick = () => toggleRow(i, k);
-  chips.appendChild(c);
-  buildTable();
-}
-
-function updateAutoColumn(i, col, value){
-  // 更新該頁所有列的自動欄(時段)
-  const table = document.querySelector("table.grid");
-  if (!table) return;
-  table.querySelectorAll('tr[data-page="' + i + '"]').forEach(tr => {
-    const inp = tr.querySelector('input[name="' + col + '"]');
-    if (inp) inp.value = value;
-  });
-}
-
-function buildTable(){
-  showLoading("載入表格...");
+async function loadPage(page){
+  currentPage = page;
+  showLoading("OCR 辨識第 " + page + " 頁...");
   try {
-  const old = document.querySelector(".table-wrap");
-  if (old) old.remove();
-
-  const wrap = document.createElement("div");
-  wrap.className = "table-wrap";
-  const table = document.createElement("table");
-  table.className = "grid";
-
-  // 決定列順序:所有被選取列(依頁、依 band),重複列跟在其後
-  const items = [];
-  analysisData.pages.forEach((p, i) => {
-    [...selections[i]].sort((a, b) => a - b).forEach(k => {
-      items.push({page: i, band: k, bandNo: k + 1, dup: 0});
-      for (let d = 1; d <= (dups[i + ":" + k] || 0); d++)
-        items.push({page: i, band: k, bandNo: k + 1, dup: d});
-    });
-  });
-
-  // thead: group 列 + 欄名列
-  const thead = document.createElement("thead");
-  const grpRow = document.createElement("tr");
-  grpRow.className = "group";
-  const autoLabel = document.createElement("th");
-  autoLabel.colSpan = AUTOS.length;
-  autoLabel.textContent = "自動";
-  grpRow.appendChild(autoLabel);
-  GROUPS.forEach(g => {
-    const th = document.createElement("th");
-    th.colSpan = g.cols.length;
-    th.textContent = g.label;
-    grpRow.appendChild(th);
-  });
-  const thCopy = document.createElement("th");
-  thCopy.textContent = "";
-  grpRow.appendChild(thCopy);
-  thead.appendChild(grpRow);
-
-  const colRow = document.createElement("tr");
-  colRow.className = "cols";
-  AUTOS.forEach(c => { const th = document.createElement("th"); th.textContent = c; colRow.appendChild(th); });
-  GROUPS.forEach(g => g.cols.forEach(c => {
-    const th = document.createElement("th"); th.textContent = c; colRow.appendChild(th);
-  }));
-  const thCopy2 = document.createElement("th"); thCopy2.textContent = "操作"; colRow.appendChild(thCopy2);
-  thead.appendChild(colRow);
-  table.appendChild(thead);
-
-  // tbody
-  const tbody = document.createElement("tbody");
-  items.forEach((it, idx) => {
-    const p = analysisData.pages[it.page];
-    const tr = document.createElement("tr");
-    tr.dataset.page = it.page;
-    tr.dataset.band = it.band;
-    tr.dataset.dup = it.dup;
-
-    // 自動欄
-    const autoVals = {
-      日期: analysisData.date_iso,
-      類型: p.type,
-      番數: it.bandNo,
-      時段: shiftValue(it.page)
-    };
-    AUTOS.forEach(c => {
-      const td = document.createElement("td");
-      td.className = "auto";
-      const inp = document.createElement("input");
-      inp.name = c;
-      inp.value = autoVals[c];
-      if (c !== "番數") inp.readOnly = true;
-      inp.style.width = c === "日期" ? "90px" : "48px";
-      td.appendChild(inp);
-      tr.appendChild(td);
-    });
-
-    // 群組欄
-    GROUPS.forEach(g => g.cols.forEach(c => {
-      const td = document.createElement("td");
-      const inp = document.createElement("input");
-      inp.name = c;
-      // Pre-fill from OCR auto_fields if available
-      const bandFields = p.auto_fields && p.auto_fields[it.band];
-      if (bandFields) {
-        const val = mapField(c, bandFields);
-        if (val !== undefined && val !== '' && val !== null) {
-          inp.value = val;
-          inp.classList.add("auto-fill");
-        }
-      }
-      td.appendChild(inp);
-      tr.appendChild(td);
-    }));
-
-    // 排列:無 OCR 圈選值時自動帶入轉位;OCR 圈選與轉位不符時標黃警告
-    // 中型 3 個模具: 排列1,2,4 ← 轉位1,2,3 (排列3 留空); 4 個模具: 排列1~4 ← 轉位1~4
-    const bandFields2 = p.auto_fields && p.auto_fields[it.band];
-    let moldCount = 0;
-    for (let m = 1; m <= 6; m++){
-      const z = tr.querySelector('input[name="轉位' + m + '"]');
-      if (z && z.value) moldCount++;
-    }
-    GROUPS.forEach(g => {
-      if (g.label !== "排列") return;
-      g.cols.forEach((c, k) => {
-        const pai = tr.querySelector('input[name="' + c + '"]');
-        if (!pai) return;
-        let src = k;                      // 預設 排列(k+1) ← 轉位(k+1)
-        if (p.type === "中型" && moldCount === 3){
-          if (k === 2) src = -1;          // 排列3 留空
-          else if (k === 3) src = 2;      // 排列4 ← 轉位3
-          else if (k >= 4) src = -1;      // 排列5/6 留空
-        }
-        const zhuan = src >= 0 ? tr.querySelector('input[name="轉位' + (src + 1) + '"]') : null;
-        if (!pai.value && zhuan && zhuan.value) {
-          pai.value = zhuan.value;
-          pai.classList.add("auto-fill");
-        }
-        if (bandFields2 && bandFields2.arrange_conflict){
-          pai.classList.add("auto-warn");
-          pai.title = "OCR 排列順序與轉位不符,請人工確認";
-        }
-      });
-    });
-
-    // 生產數量(支數) = 品項對照(支/模具) × 模具個數;對照為 0 或無對照時留空人工輸入
-    const fillQuantity = (r) => {
-      const q = r.querySelector('input[name="生產數量(支數)"]');
-      const it = r.querySelector('input[name="品項"]');
-      if (!q || !it) return;
-      if (q.value) return;
-      const per = ITEM_COUNT[(it.value || "").trim()];
-      if (!per) return;
-      let n = 0;
-      for (let m = 1; m <= 6; m++){
-        const z = r.querySelector('input[name="轉位' + m + '"]');
-        if (z && z.value) n++;
-      }
-      if (n > 0){
-        q.value = per * n;
-        q.classList.add("auto-fill");
-      }
-    };
-    fillQuantity(tr);
-    const itemInp = tr.querySelector('input[name="品項"]');
-    if (itemInp) itemInp.addEventListener("input", () => fillQuantity(tr));
-    for (let m = 1; m <= 6; m++){
-      const z = tr.querySelector('input[name="轉位' + m + '"]');
-      if (z) z.addEventListener("input", () => fillQuantity(tr));
-    }
-
-    // 操作
-    const td = document.createElement("td");
-    td.className = "copytd";
-    const btn = document.createElement("button");
-    btn.textContent = "複製上列";
-    btn.title = "把上一列的值複製到這列";
-    btn.onclick = () => copyFromPrev(tr, tbody.children[idx - 1]);
-    td.appendChild(btn);
-    const dupBtn = document.createElement("button");
-    dupBtn.textContent = "＋重複";
-    dupBtn.title = "同番次新增一列(同一番次多序時使用)";
-    dupBtn.onclick = () => {
-      const key = it.page + ":" + it.band;
-      dups[key] = (dups[key] || 0) + 1;
-      buildTable();
-    };
-    td.appendChild(dupBtn);
-    tr.appendChild(td);
-
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  const col = $("table-col-0");
-  if (col) {
-    col.innerHTML = "";
-    col.appendChild(wrap);
-  }
-} finally {
-  hideLoading();
-}
-}
-
-function shiftValue(p){
-  const sel = document.querySelector('select[data-page="' + p + '"]');
-  return sel ? sel.value : "下午";
-}
-
-function mapField(csvCol, bandFields){
-  if (!bandFields) return undefined;
-  switch (csvCol) {
-    case "品項": return bandFields.item || undefined;
-    case "轉位1": return bandFields.molds[0] || undefined;
-    case "轉位2": return bandFields.molds[1] || undefined;
-    case "轉位3": return bandFields.molds[2] || undefined;
-    case "轉位4": return bandFields.molds[3] || undefined;
-    case "轉位5": return bandFields.molds[4] || undefined;
-    case "轉位6": return bandFields.molds[5] || undefined;
-    case "離心開始": return bandFields.centrifuge[0] || undefined;
-    case "離心結束": return bandFields.centrifuge[1] || undefined;
-    case "加料轉速": return bandFields.speeds[0] || undefined;
-    case "慢速轉速": return bandFields.speeds[1] || undefined;
-    case "中速轉速": return bandFields.speeds[2] || undefined;
-    case "高速轉速": return bandFields.speeds[3] || undefined;
-    case "加料時間": return bandFields.speed_times[0] || undefined;
-    case "慢速時間": return bandFields.speed_times[1] || undefined;
-    case "中速時間": return bandFields.speed_times[2] || undefined;
-    case "高速時間": return bandFields.speed_times[3] || undefined;
-    case "蒸養池": return bandFields.steam_pool || undefined;
-    case "蒸養溫度1": return bandFields.c14 && bandFields.c14[0];
-    case "蒸養溫度2": return bandFields.c14 && bandFields.c14[1];
-    case "蒸養溫度3": return bandFields.c14 && bandFields.c14[2];
-    case "蒸養階段1": return bandFields.c15 && bandFields.c15[0];
-    case "蒸養階段2": return bandFields.c15 && bandFields.c15[1];
-    case "蒸養階段3": return bandFields.c15 && bandFields.c15[2];
-    case "排列1": return bandFields.arrange ? bandFields.arrange[0] : undefined;
-    case "排列2": return bandFields.arrange ? bandFields.arrange[1] : undefined;
-    case "排列3": return bandFields.arrange ? bandFields.arrange[2] : undefined;
-    case "排列4": return bandFields.arrange ? bandFields.arrange[3] : undefined;
-    case "排列5": return bandFields.arrange ? bandFields.arrange[4] : undefined;
-    case "排列6": return bandFields.arrange ? bandFields.arrange[5] : undefined;
-    default: return undefined;
+    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + page);
+    if (!res.ok){ showMsg("無法載入第 " + page + " 頁", false); return; }
+    analysisData = await res.json();
+    currentBand = null;
+    currentStage = 0;
+    bandData = {};
+    collectedBands = {};
+    pageTotalBands = (analysisData.rows || []).length;
+    $("pageInfo").textContent = page + " / " + totalPages;
+    $("btnPrev").disabled = page <= 1;
+    $("btnNext").disabled = page >= totalPages;
+    $("dateInfo").textContent = "日期 " + (analysisData.date_disp || "");
+    showLayout(true);
+    buildBandList();
+    buildStageForm();
+    updateCollInfo();
+    loadCanvasImage();
+    showMsg("第 " + page + " 頁載入完成 (" + pageTotalBands + " 番)", true);
+  } catch (e) {
+    showMsg("載入失敗: " + e.message, false);
+  } finally {
+    hideLoading();
   }
 }
 
-function copyFromPrev(tr, prev){
-  if (!prev) return;
-  tr.querySelectorAll("input").forEach(inp => {
-    if (inp.readOnly) return;
-    const pv = prev.querySelector('input[name="' + inp.name + '"]');
-    if (pv && pv.value) inp.value = pv.value;
-  });
-}
-
-function collectRows(){
-  const rows = [];
-  analysisData.pages.forEach((p, i) => {
-    [...selections[i]].sort((a, b) => a - b).forEach(k => {
-      const n = 1 + (dups[i + ":" + k] || 0);
-      for (let d = 0; d < n; d++){
-        const tr = document.querySelector('tr[data-page="' + i + '"][data-band="' + k + '"][data-dup="' + d + '"]');
-        const row = {};
-        if (tr){
-          tr.querySelectorAll("input").forEach(inp => { row[inp.name] = inp.value; });
-        }
-        rows.push(row);
-      }
-    });
-  });
-  return rows;
-}
-
-async function exportCsv(){
-  const rows = collectRows();
-  if (!rows.length){ showMsg("沒有選取任何列", false); return; }
-  const body = {
-    pdf: pdfName,
-    date_iso: analysisData.date_iso,
-    date_roc: analysisData.date_roc,
-    rows: rows
+function loadCanvasImage(){
+  const img = new Image();
+  pageImages[currentPage] = img;
+  img.onload = () => {
+    const canvas = $("scanCanvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    drawCanvas();
+    if (currentBand === null){
+      let first = (analysisData.rows || []).findIndex((_, k) => !bandIsEmpty(k));
+      if (first < 0) first = 0;
+      selectBand(first);
+    }
   };
-  const res = await fetch("/export", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(body)
-  });
-  const out = await res.json();
-  if (out.ok){
-    showMsg("已匯出 " + out.path + " (" + out.rows + " 列)", true);
-  } else {
-    showMsg("匯出失敗: " + (out.error || "?"), false);
+  img.src = "/img/" + encodeURIComponent(pdfName) + "/" + currentPage;
+}
+
+async function openPdf(name){
+  pdfName = name;
+  currentPage = 1;
+  totalPages = 0;
+  collectionCount = 0;
+  updateCollInfo();
+  showPageNav(false);
+  showLayout(false);
+  showLoading("分析 PDF 結構...");
+  try {
+    const res = await fetch("/api/pdf/" + encodeURIComponent(name));
+    if (!res.ok){ showMsg("無法分析 " + name, false); return; }
+    const data = await res.json();
+    totalPages = data.pages.length;
+    showPageNav(true);
+    $("dateInfo").textContent = "日期 " + (data.date_disp || "");
+    await loadPage(currentPage);
+    showMsg("載入完成 (共 " + totalPages + " 頁)", true);
+  } catch (e) {
+    showMsg("載入失敗: " + e.message, false);
+  } finally {
+    hideLoading();
   }
 }
 
-$("btnExport").onclick = exportCsv;
+function loadPdfs(){
+  const group = $("pdfGroup");
+  group.innerHTML = "";
+  PDFS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "pdf-btn";
+    btn.textContent = p;
+    btn.onclick = () => {
+      group.querySelectorAll(".pdf-btn").forEach(b => b.classList.remove("on"));
+      btn.classList.add("on");
+      openPdf(p);
+    };
+    group.appendChild(btn);
+  });
+  if (PDFS.length){
+    group.children[0].classList.add("on");
+    openPdf(PDFS[0]);
+  }
+  $("pdfUpload").onchange = (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    showLoading("上傳中...");
+    fetch("/upload", {method: "POST", body: form})
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok){ showMsg("上傳成功: " + data.name, true); location.reload(); }
+        else showMsg("上傳失敗: " + (data.error || "?"), false);
+      })
+      .catch(() => showMsg("上傳失敗", false))
+      .finally(hideLoading);
+  };
+  $("btnPrev").onclick = () => { if (currentPage > 1) loadPage(currentPage - 1); };
+  $("btnNext").onclick = () => { if (currentPage < totalPages) loadPage(currentPage + 1); };
+  $("btnExport").onclick = exportCollection;
+  $("btnAddBand").onclick = collectBand;
+  $("btnResetBand").onclick = resetBand;
+  $("btnStagePrev").onclick = prevStage;
+  $("btnStageNext").onclick = nextStage;
+  $("scanCanvas").onclick = (ev) => {
+    if (!analysisData || !pageImages[currentPage]) return;
+    const rect = ev.currentTarget.getBoundingClientRect();
+    const img = pageImages[currentPage];
+    const y = (ev.clientY - rect.top) * (img.height / rect.height);
+    let hit = -1;
+    (analysisData.rows || []).forEach((b, k) => {
+      if (y >= b[0] && y < b[1]) hit = k;
+    });
+    if (hit >= 0) selectBand(hit);
+  };
+}
+
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  const inField = t && (t.tagName === "INPUT" || t.tagName === "SELECT");
+  const inButton = t && t.tagName === "BUTTON";
+  if (e.key === "Enter"){
+    if (inButton || currentBand === null) return;
+    e.preventDefault();
+    if (currentStage < STAGES.length - 1) nextStage(); else collectBand();
+    return;
+  }
+  if (e.key === "Escape" && inField){
+    e.preventDefault();
+    t.value = "";
+    setVal(currentBand, t.dataset.col, "", false);
+    t.classList.remove("has-ocr");
+    const badge = t.parentNode.querySelector(".ocr-badge");
+    if (badge) badge.remove();
+    return;
+  }
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight"){
+    if (inField) return;
+    e.preventDefault();
+    const n = analysisData ? (analysisData.rows || []).length : 0;
+    if (!n || currentBand === null) return;
+    let nb = currentBand + (e.key === "ArrowRight" ? 1 : -1);
+    if (nb < 0) nb = n - 1;
+    if (nb >= n) nb = 0;
+    selectBand(nb);
+    return;
+  }
+  if (/^[123]$/.test(e.key) && !inField && currentBand !== null){
+    const s = parseInt(e.key, 10) - 1;
+    if (s >= 0 && s < STAGES.length){ currentStage = s; buildStageForm(); }
+  }
+});
+
 loadPdfs();
 </script>
 </body>

@@ -325,3 +325,26 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 7. **快捷鍵**: Enter(完成階段/跳至下一band)、←/→(上下band)、1/2/3(切換階段)
 8. **匯出**: 右上顯示「已收集: N/總數」，直接匯出前彈窗確認
 9. **響應式**: @media(max-width:768px) 切換為單欄布局
+
+## 2026-08-02 — 前端 UI/UX 重新布局實作 (依 re-layout-plan.md)
+
+**實作內容**:
+- `scan_entry/templates/index.html` — 全面重寫為三欄布局 + 逐番審查
+  - 三欄: Canvas(40%) | 番次列表(12%) | 階段表單(48%),@media 768px 切單欄
+  - 三個階段依序顯示: 基本資料(6欄) → 離心(16欄) → 蒸養(14欄),進度條+上一步/下一步
+  - 逐番審查: 點番次/畫布 → 高亮藍色,已收集綠色邊框+打勾,空番灰字+「空」徽標
+  - OCR 預填綠徽標,手動修改後徽標消失;排列依轉位自動帶入(中型3模具特判)+衝突標黃
+  - 生產數量 = 品項對照 × 模具個數 自動帶入;Enter/1·2·3/←→/Esc 快捷鍵
+  - 匯出前 confirm 彈窗確認
+- `scan_entry/app.py` — 新增 `POST /api/collection/band`(逐番收集,kind=band);`/api/pdf/<name>/<page>` 補上 date_iso/date_roc/date_disp (原單頁 API 缺日期,匯出會是空日期)
+- `scan_entry/verify_html.py` + `verify_js_braces.py` — 新增驗證腳本 (三欄結構 + JS 括號配對 + node --check 語法)
+
+**順帶修復**:
+- `index.html` 原 `loadPdfs()` 的 `PdfS`(大小寫錯誤) ReferenceError 會中斷所有事件綁定
+- (先前 commit da6802f 已還原 `ocrx.parse_arrange_circles` 遺失的 def — C13 排列在正式路徑原本永遠失效)
+
+**驗證**:
+- `verify_html.py` PASS / `verify_js_braces.py` PASS / `node --check` PASS
+- `test_flow.py` 4 份 IDENTICAL / `test_export.py` IDENTICAL
+- API 冒煙: `/api/pdf/1150729.pdf/2` 回傳日期+auto_fields,`POST /api/collection/band` ok,`GET/DELETE /api/collection` ok
+- 伺服器已重啟載入新 code

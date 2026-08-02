@@ -121,6 +121,10 @@ def api_pdf_page(name, page):
         return flask.jsonify({'error': 'invalid page'}), 404
     logger.info('api_pdf_page: %s page=%d', name, page)
     result = analysis.page_analysis(path, page - 1)
+    roc, iso, disp = analysis.filename_date(name)
+    result['date_iso'] = iso
+    result['date_roc'] = roc
+    result['date_disp'] = disp
     return flask.jsonify(result)
 
 
@@ -170,6 +174,33 @@ def add_to_collection():
         COLLECTIONS[sid] = []
     COLLECTIONS[sid].append(page_data)
     logger.info('collection POST sid=%s page=%d rows=%d total=%d', sid[:8], page_data.get('page', 0), len(page_data.get('rows', [])), len(COLLECTIONS[sid]))
+    return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
+
+
+@app.route('/api/collection/band', methods=['POST'])
+def add_band_to_collection():
+    """逐番收集:把單個番次資料加入集合(每 band = 1 列 CSV)。"""
+    sid = flask.session.get('sid') or str(uuid.uuid4())
+    flask.session['sid'] = sid
+    data = flask.request.get_json(force=True)
+    item = {
+        'kind': 'band',
+        'pdf': data.get('pdf'),
+        'page': data.get('page'),
+        'band': data.get('band'),
+        'date_iso': data.get('date_iso'),
+        'date_roc': data.get('date_roc'),
+        'date_disp': data.get('date_disp'),
+        'type': data.get('type'),
+        'shift': data.get('shift'),
+        'fields': data.get('fields', {}),
+        'added_at': datetime.now().isoformat(),
+    }
+    if sid not in COLLECTIONS:
+        COLLECTIONS[sid] = []
+    COLLECTIONS[sid].append(item)
+    logger.info('collection band POST sid=%s pdf=%s page=%d band=%s total=%d',
+                sid[:8], item['pdf'], item['page'], item['band'], len(COLLECTIONS[sid]))
     return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
 
 
