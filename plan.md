@@ -204,6 +204,81 @@
 5. 「匯出 CSV」按鈕 → `exportCollection()` → 從集合匯出所有頁面
 
 **驗證**:
-- ✅ 單頁 API 200 OK + auto_fields
-- ✅ Collection GET/POST/DELETE 200 OK
-- ✅ UI: 頁碼顯示 (X/Y)、上一頁/下一頁、加入集合按鈕
+  - ✅ 單頁 API 200 OK + auto_fields
+  - ✅ Collection GET/POST/DELETE 200 OK
+  - ✅ UI: 頁碼顯示 (X/Y)、上一頁/下一頁、加入集合按鈕
+
+## 8. 前端 UI/UX 重新布局計畫 (2026-08-02 Grilling Session)
+
+### 8.1 痛點
+- 39 欄表格過寬，單頁辨識時集合表格過寬，認知負荷過重
+- Canvas + 表格並排 Layout，桌面寬螢幕可用但窄螢幕擠滶
+
+### 8.2 三欄 Layout (Horizontal Three-Column)
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Header (sticky): PDF選擇 | 頁碼 | 進度 | 匯出 | 收集計數    │
+├──────┬─────┬───────────────────────────────────────────────┤
+│      │     │ 三個階段依序顯示(預設階段1)                     │
+│ Canvas│Band│                                               │
+│ (40%) │列(│ Stage 1: 基本資料 (6欄)                         │
+│      │10%)│   番號/序, 品項, 生產數量, 生產量修正, 位置, 時段│
+│      │     │ Stage 2: 離心 (10欄)                            │
+│      │     │   轉位1-6, 離心開始/結束, 4轉速, 4時間         │
+│      │     │ Stage 3: 蒸養 (8欄)                             │
+│      │     │   蒸養池, 入池時間, 3溫度, 3時間, 排列1-6      │
+│      │     │                                               │
+└──────┴─────┴───────────────────────────────────────────────┘
+```
+
+### 8.3 逐番審查流程 (Band-by-Band Review)
+1. 選擇 PDF → 載入第 1 頁 → `GET /api/pdf/<name>/<page>`
+2. Canvas 固定顯示影像，Band 列表顯示所有番次編號+勾選框
+3. 點擊 Band → Canvas 高亮該 Band 區域 (藍色遮罩)
+4. 右欄表單顯示三個階段，預設階段 1 (基本資料)
+5. **進度條 + 上一步/下一步按鈕** 切換階段
+6. 每個欄位: OCR 預填時顯示綠徽標，手動修改後徽標消失
+7. 完成 3 階段 → 按「加入集合」(Enter 快捷鍵) → Band 列表打勾標記
+8. 匯出: 右上角顯示「已收集: N/總數」，點匯出 → 彈窗確認 → `POST /export`
+
+### 8.4 Canvas 與 Band 選擇
+- **Canvas 固定顯示**，點擊 Band 區域或列表跳轉
+- **高亮矩形 + 邊框**: 藍色半透明遮罩標示當前 Band，綠色邊框標示已收集
+- **Band 列表**: 編號 + 勾選框 + 狀態 (灰字 +「空」徽標標示跳過)
+
+### 8.5 鍵盤快捷鍵
+| 按鍵 | 動作 |
+|------|------|
+| Enter | 完成當前階段 → 下一階段 (或跳到下一 Band) |
+| ← / → | 上一/下一 Band |
+| 1 / 2 / 3 | 切換到階段 1 / 2 / 3 |
+| Escape | 重置當前欄位 |
+
+### 8.6 響應式設計
+```css
+@media (max-width: 768px) {
+  .layout-body { flex-direction: column; }
+  .canvas-col { width: 100%; }
+  .band-list { width: 100%; flex-direction: row; }
+  .form-col { width: 100%; }
+}
+```
+
+### 8.7 資料流程
+```
+1. 選擇 PDF → openPdf(name)
+2. 載入第1頁 → GET /api/pdf/<name>/<page> → auto_fields
+3. Canvas 顯示影像 + Band 列表
+4. 點擊 Band → 顯示 Band 詳細資料(OCR 預填)
+5. 進度條: Stage 1(基本) → Stage 2(離心) → Stage 3(蒸養)
+6. 每步驟: OCR 預填(綠徽標) → 用戶修正(徽標消失)
+7. 完成3 stages → 加入集合 (Enter)
+8. Band 列表打勾標記
+9. 下一 Band 或上一頁/下一頁導航
+10. 匯出 CSV → POST /export
+```
+
+### 8.8 API 變更
+- **現有 API 無需改動**: `/api/pdf/<name>/<page>` 返回單頁分析 + auto_fields
+- **收集模式**: 逐番收集，使用者按「加入集合」後呼叫 `/api/collection` POST (band 資料)
+- **匯出**: `/export` POST 接收來自集合的所有 rows
