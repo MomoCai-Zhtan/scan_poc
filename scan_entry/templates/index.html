@@ -7,7 +7,8 @@
 <style>
   :root { --line:#ccc; --head:#f0f0f0; --blue:#4285f4; --green:#34a853; --warn:#f0ad4e; }
   * { box-sizing: border-box; }
-  body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: #fafafa; color: #222; }
+  html, body { height: 100%; }
+  body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: #fafafa; color: #222; display: flex; flex-direction: column; }
   header { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px; position: sticky; top: 0; z-index: 10;
            display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 18px; margin: 0 8px 0 0; }
@@ -29,17 +30,25 @@
   .spinner { width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  main { padding: 16px; }
-  .layout-body { display: flex; gap: 12px; align-items: flex-start; }
-  .canvas-col { flex: 0 0 40%; min-width: 0; }
-  .canvas-wrap { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px; }
+  .layout-body { flex: 1; min-height: 0; display: flex; gap: 12px; }
+  .canvas-col { flex: 0 0 40%; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .canvas-wrap { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .canvas-toolbar { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; gap: 12px; align-items: center;
+                    background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 5px;
+                    padding: 4px 10px; font-size: 12px; color: #444; box-shadow: 0 1px 3px rgba(0,0,0,.18);
+                    touch-action: none; user-select: none; }
+  .canvas-toolbar label { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 3px; }
+  .toolbar-drag { cursor: move; color: #888; font-size: 14px; line-height: 1; }
+  .toolbar-btn { font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; }
+  .toolbar-btn:hover { background: #f5f5f5; }
   canvas { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; cursor: pointer; display: block; }
   .legend { margin-top: 6px; font-size: 12px; color: #666; }
   .legend span { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: middle; }
   .lg-cur { background: rgba(66,133,244,.3); border: 1px solid var(--blue); }
   .lg-col { background: rgba(52,168,83,.25); border: 1px solid var(--green); }
-
-  .band-list { flex: 0 0 12%; min-width: 96px; max-width: 150px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .grid-toggle { margin-left: 10px; cursor: pointer; user-select: none; }
+  .band-list { flex: 0 0 12%; min-width: 96px; max-width: 150px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-y: auto; overscroll-behavior: contain; }
   .band-list h4 { margin: 0 0 8px; font-size: 13px; color: #444; }
   .band-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px;
                margin-bottom: 6px; cursor: pointer; font-size: 13px; user-select: none; }
@@ -54,7 +63,7 @@
   .band-empty-badge { background: #eee; color: #666; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
   .cnt-badge { background: var(--blue); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
 
-  .form-col { flex: 1 1 48%; min-width: 0; }
+  .form-col { flex: 1 1 48%; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
   .page-status { font-size: 13px; color: #666; margin-bottom: 8px; }
   .stage-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .progress-bar { flex: 1; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
@@ -73,6 +82,17 @@
   .field-row input:focus, .field-row select:focus { border-color: var(--blue); outline: none; }
   .field-row input.has-ocr { background: #e8f5e9; }
   .field-row input.auto-warn { background: #fef9e7; border-color: var(--warn) !important; }
+  .field-row.grid-row { display: flex; gap: 6px; }
+  .field-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .field-cell label { font-size: 11px; text-align: center; color: #333; line-height: 1.1;
+                      display: block; margin: 0; padding: 0; }
+  .field-cell input, .field-cell select { width: 100%; padding: 4px 6px; font-size: 13px;
+                                          border: 1px solid var(--line); border-radius: 4px; }
+  .form-section { border: 1px solid var(--line); border-radius: 6px; background: #fff;
+                  margin-bottom: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .form-section .section-head { color: #fff; font-size: 12px; font-weight: 700;
+                                padding: 5px 10px; user-select: none; }
+  .form-section .section-body { padding: 8px 10px; }
   .ocr-badge { background: var(--green); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 6px;
                flex: 0 0 auto; }
   .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
@@ -82,11 +102,14 @@
   .empty-state { text-align: center; color: #888; padding: 60px 20px; font-size: 16px; }
 
   @media (max-width: 768px) {
-    .layout-body { flex-direction: column; }
-    .canvas-col, .band-list, .form-col { width: 100%; flex: none; max-width: none; }
+    body { height: auto; }
+    .layout-body { flex-direction: column; height: auto; }
+    .canvas-col, .band-list, .form-col { width: 100%; flex: none; max-width: none; height: auto; overflow: visible; }
     .band-list { display: flex; flex-wrap: wrap; gap: 6px; }
     .band-item { margin-bottom: 0; }
     .field-row label { flex: 0 0 96px; }
+    .field-row.grid-row { flex-wrap: wrap; }
+    .field-cell { flex: 1 1 48%; }
   }
 </style>
 </head>
@@ -114,6 +137,11 @@
   <div id="layoutBody" class="layout-body" style="display:none">
     <div class="canvas-col">
       <div class="canvas-wrap">
+        <div class="canvas-toolbar">
+          <span class="toolbar-drag" title="拖曳移動">⠿</span>
+          <label><input type="checkbox" id="gridToggle" checked> 顯示格線</label>
+          <button id="btnReOcr" class="toolbar-btn" title="強制重新 OCR 目前頁並更新快照">重新 OCR</button>
+        </div>
         <canvas id="scanCanvas"></canvas>
         <div class="legend">藍色<span class="lg-cur"></span>目前番次&nbsp;&nbsp;綠色<span class="lg-col"></span>已收集</div>
       </div>
@@ -158,15 +186,38 @@ const ITEM_COUNT = {{ item_count | tojson }};
 
 // 審查階段欄位劃分 (逐番審查:三個階段依序顯示)
 const STAGES = [
-  {name:"基本資料", cols:["序","品項","生產數量(支數)","生產量修正(+/-量)","位置","時段"]},
+  {name:"基本資料", cols:["序","品項","生產數量(支數)","生產量修正(+/-量)","時段"]},
   {name:"離心", cols:["轉位1","轉位2","轉位3","轉位4","轉位5","轉位6",
                       "離心開始","離心結束","加料轉速","慢速轉速","中速轉速","高速轉速",
                       "加料時間","慢速時間","中速時間","高速時間"]},
   {name:"蒸養", cols:["蒸養池","入池時間","蒸養溫度1","蒸養溫度2","蒸養溫度3",
-                      "蒸養階段1","蒸養階段2","蒸養階段3","排列1","排列2","排列3","排列4","排列5","排列6"]},
+                      "蒸養階段1","蒸養階段2","蒸養階段3","位置","排列1","排列2","排列3","排列4","排列5","排列6"]},
 ];
 const AUTO_COLS = ["日期", "類型", "番數"];   // 頁層級自動欄(不進階段表單)
 const SELECT_COLS = ["時段"];
+const ROW_GROUPS = [                         // 同一列顯示的欄位群組
+  ["轉位1", "轉位2", "轉位3", "轉位4", "轉位5", "轉位6"],
+  ["離心開始", "離心結束"],
+  ["加料轉速", "慢速轉速", "中速轉速", "高速轉速"],
+  ["加料時間", "慢速時間", "中速時間", "高速時間"],
+  ["蒸養池", "入池時間"],
+  ["蒸養溫度1", "蒸養溫度2", "蒸養溫度3"],
+  ["蒸養階段1", "蒸養階段2", "蒸養階段3"],
+];
+const STAGE_SECTIONS = {                     // 階段 → 卡片區塊 section (彩色表頭 + 內容區)
+  1: [                                        // 離心
+    {name: "轉位",     color: "#0b5394", groups: [["轉位1", "轉位2", "轉位3", "轉位4", "轉位5", "轉位6"]]},
+    {name: "離心時間", color: "#00897b", groups: [["離心開始", "離心結束"]]},
+    {name: "轉速",     color: "#ef6c00", groups: [["加料轉速", "慢速轉速", "中速轉速", "高速轉速"]]},
+    {name: "時間",     color: "#7b1fa2", groups: [["加料時間", "慢速時間", "中速時間", "高速時間"]]},
+  ],
+  2: [                                        // 蒸養
+    {name: "蒸養池",     color: "#2e7d32", groups: [["蒸養池", "入池時間"]]},
+    {name: "蒸養溫度",   color: "#c62828", groups: [["蒸養溫度1", "蒸養溫度2", "蒸養溫度3"]]},
+    {name: "蒸養階段",   color: "#6d4c41", groups: [["蒸養階段1", "蒸養階段2", "蒸養階段3"]]},
+    {name: "位置與排列", color: "#455a64", groups: [["位置"], ["排列1", "排列2", "排列3", "排列4", "排列5", "排列6"]]},
+  ],
+};
 
 let pdfName = "";
 let currentPage = 1;
@@ -178,6 +229,7 @@ let bandData = {};            // bandIdx -> {vals:{col:val}, ocr:{col:true}}
 let collectedBands = {};      // bandIdx -> 收集次數
 let collectionCount = 0;      // 集合總列數 (server count)
 let pageTotalBands = 0;
+let showGrid = true;           // ToolBar: 顯示 C/R 格線覆疊
 const pageImages = {};
 
 function $(id){ return document.getElementById(id); }
@@ -253,12 +305,13 @@ function mapField(csvCol, bf){
     case "中速時間": return bf.speed_times[2] || undefined;
     case "高速時間": return bf.speed_times[3] || undefined;
     case "蒸養池": return bf.steam_pool || undefined;
-    case "蒸養溫度1": return bf.c14 && bf.c14[0];
-    case "蒸養溫度2": return bf.c14 && bf.c14[1];
-    case "蒸養溫度3": return bf.c14 && bf.c14[2];
-    case "蒸養階段1": return bf.c15 && bf.c15[0];
-    case "蒸養階段2": return bf.c15 && bf.c15[1];
-    case "蒸養階段3": return bf.c15 && bf.c15[2];
+    case "入池時間": return bf.pool_time || undefined;
+    case "蒸養溫度1": return (bf.temps && bf.temps[0]) || (bf.c14 && bf.c14[0]);
+    case "蒸養溫度2": return (bf.temps && bf.temps[1]) || (bf.c14 && bf.c14[1]);
+    case "蒸養溫度3": return (bf.temps && bf.temps[2]) || (bf.c14 && bf.c14[2]);
+    case "蒸養階段1": return (bf.stages && bf.stages[0]) || (bf.c15 && bf.c15[0]);
+    case "蒸養階段2": return (bf.stages && bf.stages[1]) || (bf.c15 && bf.c15[1]);
+    case "蒸養階段3": return (bf.stages && bf.stages[2]) || (bf.c15 && bf.c15[2]);
     case "排列1": return bf.arrange && bf.arrange[0];
     case "排列2": return bf.arrange && bf.arrange[1];
     case "排列3": return bf.arrange && bf.arrange[2];
@@ -328,6 +381,28 @@ function recomputeDerived(k){
   }
 }
 
+function computePositions(){
+  if (!analysisData || analysisData.type !== "小型") return;
+  const n = (analysisData.rows || []).length;
+  if (!n) return;
+  const pools = [];
+  for (let k = 0; k < n; k++){
+    const d = bandData[k];
+    const bf = bandInfo(k);
+    pools.push((d && d.vals["蒸養池"]) || (bf && bf.steam_pool) || "");
+  }
+  const groups = {};
+  pools.forEach((p, k) => { if (p) (groups[p] = groups[p] || []).push(k); });
+  const POS = ["下", "中", "上"];
+  Object.keys(groups).forEach(p => {
+    groups[p].sort((a, b) => a - b).forEach((k, i) => {
+      if (i >= POS.length) return;
+      if (!bandData[k]) initBand(k);
+      if (!bandData[k].vals["位置"]) setVal(k, "位置", POS[i], false);
+    });
+  });
+}
+
 function syncFieldDom(col){
   const inp = $("fld-" + col);
   if (inp && bandData[currentBand]){
@@ -371,15 +446,7 @@ function buildStageForm(){
     card.appendChild(info);
   }
 
-  stage.cols.forEach(col => {
-    const d = bandData[currentBand];
-    const row = document.createElement("div");
-    row.className = "field-row";
-    const lbl = document.createElement("label");
-    lbl.textContent = col;
-    lbl.htmlFor = "fld-" + col;
-    row.appendChild(lbl);
-
+  const makeInput = (col, d) => {
     let inp;
     if (SELECT_COLS.includes(col)){
       inp = document.createElement("select");
@@ -392,12 +459,7 @@ function buildStageForm(){
     } else {
       inp = document.createElement("input");
       inp.type = "text";
-      if (col === "序"){
-        inp.type = "number"; inp.min = 1;
-        inp.value = d.vals[col] || String((collectedBands[currentBand] || 0) + 1);
-      } else {
-        inp.value = d.vals[col] || "";
-      }
+      inp.value = d.vals[col] || "";
     }
     inp.id = "fld-" + col;
     inp.dataset.col = col;
@@ -408,28 +470,98 @@ function buildStageForm(){
         syncFieldDom("生產數量(支數)");
         if (currentStage === 2) buildStageForm();
       }
-      const badge = row.querySelector(".ocr-badge");
+      if (col === "蒸養池"){
+        computePositions();
+        syncFieldDom("位置");
+      }
+      const badge = inp.parentNode.querySelector(".ocr-badge");
       if (badge) badge.remove();
       inp.classList.remove("has-ocr");
     };
     inp.oninput = handleEdit;
     if (SELECT_COLS.includes(col)) inp.onchange = handleEdit;
-    row.appendChild(inp);
+    return inp;
+  };
 
+  const markOcr = (el, col, inp) => {
+    const d = bandData[currentBand];
     if (d.ocr[col] && d.vals[col]){
       inp.classList.add("has-ocr");
       const badge = document.createElement("span");
       badge.className = "ocr-badge";
       badge.textContent = "OCR";
-      row.appendChild(badge);
+      el.appendChild(badge);
     }
     const bf = bandInfo(currentBand);
     if (bf && bf.arrange_conflict && col.startsWith("排列")){
       inp.classList.add("auto-warn");
       inp.title = "OCR 排列順序與轉位不符,請人工確認";
     }
-    card.appendChild(row);
-  });
+  };
+
+  const buildCell = (col) => {
+    const cell = document.createElement("div");
+    cell.className = "field-cell";
+    const lbl = document.createElement("label");
+    lbl.textContent = col;
+    lbl.htmlFor = "fld-" + col;
+    cell.appendChild(lbl);
+    const inp = makeInput(col, bandData[currentBand]);
+    cell.appendChild(inp);
+    markOcr(cell, col, inp);
+    return cell;
+  };
+
+  const groups = [];
+  const flat = stage.cols;
+  for (let i = 0; i < flat.length;){
+    const g = ROW_GROUPS.find(x => flat[i] === x[0] && x.every((c, k) => flat[i + k] === c));
+    if (g){ groups.push(g); i += g.length; }
+    else { groups.push([flat[i]]); i++; }
+  }
+
+  const sections = STAGE_SECTIONS[currentStage];
+  if (sections){
+    sections.forEach(sec => {
+      const secEl = document.createElement("div");
+      secEl.className = "form-section";
+      const head = document.createElement("div");
+      head.className = "section-head";
+      head.style.background = sec.color || "#0b5394";
+      head.textContent = sec.name;
+      secEl.appendChild(head);
+      const body = document.createElement("div");
+      body.className = "section-body";
+      sec.groups.forEach(g => {
+        const row = document.createElement("div");
+        row.className = g.length > 1 ? "field-row grid-row" : "field-row";
+        g.forEach(col => row.appendChild(buildCell(col)));
+        body.appendChild(row);
+      });
+      secEl.appendChild(body);
+      card.appendChild(secEl);
+    });
+  } else {
+    groups.forEach(g => {
+      const d = bandData[currentBand];
+      const row = document.createElement("div");
+      row.className = "field-row";
+      if (g.length > 1){
+        row.classList.add("grid-row");
+        g.forEach(col => row.appendChild(buildCell(col)));
+      } else {
+        const col = g[0];
+        const lbl = document.createElement("label");
+        lbl.textContent = col;
+        lbl.htmlFor = "fld-" + col;
+        row.appendChild(lbl);
+        const inp = makeInput(col, d);
+        row.appendChild(inp);
+        markOcr(row, col, inp);
+      }
+      card.appendChild(row);
+    });
+  }
   wrap.appendChild(card);
   updateProgress();
 }
@@ -516,6 +648,38 @@ function drawCanvas(){
     ctx.font = "bold 13px sans-serif";
     ctx.fillText((k + 1) + "番", 8, y + 18);
   });
+  if (showGrid){
+    const scale = canvas.clientWidth / canvas.width;
+    const fs = Math.max(11, Math.round(38 * scale));
+    ctx.font = "bold " + fs + "px sans-serif";
+    ctx.lineWidth = Math.max(1, Math.round(2 * scale));
+    ctx.strokeStyle = "rgba(214,48,49,.55)";
+    ctx.fillStyle = "#d63031";
+    (analysisData.v_lines || []).forEach((x, i) => {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      ctx.fillText("C" + (i + 1), x + 4, fs + 4);
+    });
+    (analysisData.h_lines || []).forEach((y, i) => {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      ctx.fillText("R" + (i + 1), 4, y + fs);
+    });
+  }
+}
+
+function alignCanvasToBand(k){
+  const scroller = document.querySelector(".canvas-col");
+  const canvas = $("scanCanvas");
+  const img = pageImages[currentPage];
+  if (!scroller || !canvas || !img || !analysisData) return;
+  const r = (analysisData.rows || [])[k];
+  if (!r || canvas.height === 0) return;
+  const dispH = canvas.getBoundingClientRect().height;
+  if (dispH <= scroller.clientHeight) return;          // 整張畫布都看得見 → 不需捲動
+  const sy = dispH / canvas.height;
+  const y0 = r[0] * sy, y1 = r[1] * sy;
+  if (y0 >= scroller.scrollTop && y1 <= scroller.scrollTop + scroller.clientHeight) return; // 已完全可見
+  const target = y0 - (scroller.clientHeight - (y1 - y0)) / 2;
+  scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
 }
 
 function selectBand(k){
@@ -526,6 +690,7 @@ function selectBand(k){
   buildBandList();
   drawCanvas();
   buildStageForm();
+  alignCanvasToBand(k);
 }
 
 function syncBandListAndCanvas(){
@@ -550,7 +715,6 @@ async function collectBand(){
   initBand(currentBand);
   recomputeDerived(currentBand);
   const d = bandData[currentBand];
-  if (!d.vals["序"]) d.vals["序"] = String((collectedBands[currentBand] || 0) + 1);
   const row = {};
   AUTO_COLS.forEach(c => {
     if (c === "日期") row[c] = analysisData.date_iso || "";
@@ -580,7 +744,7 @@ async function collectBand(){
     if (out.ok){
       collectedBands[currentBand] = (collectedBands[currentBand] || 0) + 1;
       collectionCount = out.count;
-      bandData[currentBand].vals["序"] = "";   // 下次收集序號自動遞增
+      bandData[currentBand].vals["序"] = "";   // 序號由用戶自行填寫
       updateCollInfo();
       syncBandListAndCanvas();
       showMsg("已收集番" + (currentBand + 1) + " (集合共 " + collectionCount + " 列)", true);
@@ -636,6 +800,7 @@ function resetBand(){
   if (currentBand === null) return;
   delete bandData[currentBand];
   initBand(currentBand);
+  computePositions();
   buildStageForm();
   showMsg("番" + (currentBand + 1) + " 已重置為 OCR 預填值", true);
 }
@@ -659,6 +824,7 @@ async function loadPage(page){
     showLayout(true);
     buildBandList();
     buildStageForm();
+    computePositions();
     updateCollInfo();
     loadCanvasImage();
     showMsg("第 " + page + " 頁載入完成 (" + pageTotalBands + " 番)", true);
@@ -751,6 +917,44 @@ function loadPdfs(){
   $("btnResetBand").onclick = resetBand;
   $("btnStagePrev").onclick = prevStage;
   $("btnStageNext").onclick = nextStage;
+  $("gridToggle").onchange = (ev) => { showGrid = ev.target.checked; drawCanvas(); };
+  $("btnReOcr").onclick = async () => {
+    if (!pdfName || !currentPage) return;
+    showLoading("重新 OCR 第 " + currentPage + " 頁...");
+    try {
+      await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + currentPage + "/ocr",
+                  {method: "POST"});
+      await loadPage(currentPage);
+      showMsg("第 " + currentPage + " 頁 OCR 已更新", true);
+    } catch (e) {
+      showMsg("重新 OCR 失敗: " + e.message, false);
+    } finally {
+      hideLoading();
+    }
+  };
+  const toolbar = document.querySelector(".canvas-toolbar");
+  const dragHandle = toolbar.querySelector(".toolbar-drag");
+  let dragState = null;
+  dragHandle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const wrap = toolbar.parentElement;
+    const wrapRect = wrap.getBoundingClientRect();
+    const barRect = toolbar.getBoundingClientRect();
+    dragState = { dx: e.clientX - barRect.left, dy: e.clientY - barRect.top, wrapRect, w: barRect.width, h: barRect.height };
+    dragHandle.setPointerCapture(e.pointerId);
+  });
+  dragHandle.addEventListener("pointermove", (e) => {
+    if (!dragState) return;
+    const { dx, dy, wrapRect, w, h } = dragState;
+    const left = Math.max(4, Math.min(e.clientX - wrapRect.left - dx, wrapRect.width - w - 4));
+    const top = Math.max(4, Math.min(e.clientY - wrapRect.top - dy, wrapRect.height - h - 4));
+    toolbar.style.left = left + "px";
+    toolbar.style.top = top + "px";
+    toolbar.style.right = "auto";
+  });
+  const endDrag = () => { dragState = null; };
+  dragHandle.addEventListener("pointerup", endDrag);
+  dragHandle.addEventListener("pointercancel", endDrag);
   $("scanCanvas").onclick = (ev) => {
     if (!analysisData || !pageImages[currentPage]) return;
     const rect = ev.currentTarget.getBoundingClientRect();

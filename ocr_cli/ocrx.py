@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Mistral OCR integration: send page image to Mistral OCR API, return markdown."""
-import os, sys, base64
+import os, sys, base64, logging, time, re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import structure as st
 import cv2
@@ -8,6 +8,21 @@ import httpx
 import numpy as np
 
 ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+
+LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        'scan_entry', 'logs', 'scan_entry.log')
+
+log = logging.getLogger('ocrx')
+if not log.handlers:
+    log.setLevel(logging.INFO)
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        _f = logging.FileHandler(LOG_FILE, encoding='utf-8')
+        _f.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s [ocrx] %(message)s',
+                                          datefmt='%Y-%m-%d %H:%M:%S'))
+        log.addHandler(_f)
+    except Exception:
+        pass
 
 def _load_env():
     cfg = {}
@@ -32,7 +47,9 @@ OCR_API_URL = _cfg.get('MISTRAL_API_URL', 'https://api.mistral.ai/v1/ocr')
 def ocr_image(bgr):
     """Send an in-memory BGR image to Mistral OCR. Returns markdown string."""
     if not OCR_API_KEY:
+        log.error('OCR aborted: MISTRAL_API_KEY not set')
         return None
+    t0 = time.time()
     _, buf = cv2.imencode('.png', bgr)
     b64 = base64.b64encode(buf.tobytes()).decode('utf-8')
 
@@ -42,13 +59,22 @@ def ocr_image(bgr):
         'document': {'type': 'image_url', 'image_url': f'data:image/png;base64,{b64}'},
         'include_image_base64': False,
     }
-    resp = httpx.post(OCR_API_URL, headers=headers, json=data, timeout=120)
+    try:
+        resp = httpx.post(OCR_API_URL, headers=headers, json=data, timeout=120)
+    except Exception as e:
+        log.error('OCR request exception: %s', repr(e))
+        return None
+    dt = time.time() - t0
     if resp.status_code != 200:
+        log.error('OCR api status=%d elapsed=%.1fs body=%.150s', resp.status_code, dt, resp.text)
         return None
     result = resp.json()
     pages_data = result.get('pages', [])
     if pages_data:
-        return pages_data[0].get('markdown', '')
+        md = pages_data[0].get('markdown', '')
+        log.info('OCR ok len=%d elapsed=%.1fs', len(md), dt)
+        return md
+    log.warning('OCR api 200 but no pages (elapsed=%.1fs)', dt)
     return None
 
 
@@ -57,7 +83,10 @@ def ocr_page(pdf_path, page_index):
     pages = st.render_pages(pdf_path, 200)
     img = pages[page_index]
     bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    return ocr_image(bgr)
+    md = ocr_image(bgr)
+    log.info('ocr_page %s p%d -> %s', os.path.basename(pdf_path), page_index + 1,
+             'ok' if md else 'FAIL')
+    return md
 
 
 def ocr_crop(pdf_path, page_index, x, y, w, h, scale=2, pad=12):
@@ -71,7 +100,10 @@ def ocr_crop(pdf_path, page_index, x, y, w, h, scale=2, pad=12):
         crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     canvas = np.full((crop.shape[0] + pad * 2, crop.shape[1] + pad * 2, 3), 255, np.uint8)
     canvas[pad:pad + crop.shape[0], pad:pad + crop.shape[1]] = crop
-    return ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    md = ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    log.info('ocr_crop %s p%d box=(%d,%d,%d,%d) -> %s', os.path.basename(pdf_path), page_index + 1,
+             x, y, w, h, 'ok' if md else 'FAIL')
+    return md
 
 
 def ocr_band_with_header(pdf_path, page_index, y0, y1, x0=80, x1=1600,
@@ -91,7 +123,10 @@ def ocr_band_with_header(pdf_path, page_index, y0, y1, x0=80, x1=1600,
     canvas = np.full((H, hdr.shape[1], 3), 255, np.uint8)
     canvas[0:hdr.shape[0]] = hdr
     canvas[hdr.shape[0] + gap: hdr.shape[0] + gap + band.shape[0]] = band
-    return ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    md = ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    log.info('ocr_band %s p%d band_y=(%d,%d) -> %s', os.path.basename(pdf_path), page_index + 1,
+             y0, y1, 'ok' if md else 'FAIL')
+    return md
 
 
 def _extract_c14c15(r1, col_idx):
@@ -384,3 +419,453 @@ def normalize_item(raw):
     if re.fullmatch(r'\d{3,4}', s):
         return s
     return s
+
+
+def _dig(cell):
+    import re
+    m = re.search(r'\d+', cell or '')
+    return m.group(0) if m else ''
+
+
+def _small_cell(row, i):
+    return row[i] if i < len(row) else ''
+
+
+def _valid_range(d, lo, hi):
+    if not d:
+        return ''
+    try:
+        v = int(d)
+    except (TypeError, ValueError):
+        return ''
+    return d if lo <= v <= hi else ''
+
+
+def _parse_small_rows(r1, r2, r3):
+    """Fixed-column parser for a 小型 band's 3 rows (23-col wide table).
+
+    Layout: col0=番次 1=品項 2=管模 3-8=模具6 9-12=轉速 13=蒸養池
+            21=溫度 22=階段 (per row: R1=溫度1/階段1 ... R3=溫度3/階段3)
+    R2: col3=離心開始~結束, col9-12=時間4.
+    Values are range-validated to drop OCR 幻覺 that leaks digits from other
+    cells (e.g. a cent time landing in the temps column).
+    """
+    b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
+         'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
+         'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
+         'arrange': [], 'c14': [], 'c15': []}
+    b['fan'] = _dig(_small_cell(r1, 0))
+    b['item'] = normalize_item(_small_cell(r1, 1))
+    for k in range(6):
+        b['molds'][k] = _dig(_small_cell(r1, 3 + k))
+    for k in range(4):
+        d = _dig(_small_cell(r1, 9 + k))
+        b['speeds'][k] = _valid_range(d, 100, 1400)
+    pool_cell = _small_cell(r1, 13)
+    nums = re.findall(r'\d+', pool_cell)
+    if nums:
+        if re.search(r'\d{4}', pool_cell):
+            m = re.search(r'\d{4}', pool_cell)
+            b['steam_pool'] = nums[0]
+            if _valid_range(m.group(0), 600, 2359):
+                b['pool_time'] = m.group(0)
+        elif len(nums) >= 3 and len(nums[1]) == 2 and len(nums[2]) == 2:
+            b['steam_pool'] = nums[0]
+            hhmm = nums[1] + nums[2]
+            if _valid_range(hhmm, 600, 2359):
+                b['pool_time'] = hhmm
+        else:
+            b['steam_pool'] = nums[0]
+    for k in range(4):
+        d = _dig(_small_cell(r2, 9 + k))
+        b['speed_times'][k] = _valid_range(d, 1, 20)
+    cent_cell = _small_cell(r2, 3)
+    cents = re.findall(r'\d{4}', cent_cell)
+    if cents:
+        b['centrifuge'] = (cents[0], cents[1] if len(cents) > 1 else '')
+    elif cent_cell:
+        ns = re.findall(r'\d+', cent_cell)
+        if len(ns) >= 2:
+            b['centrifuge'] = (ns[0], ns[1])
+    for i, row in ((0, r1), (1, r2), (2, r3)):
+        b['temps'][i] = _valid_range(_dig(_small_cell(row, 21)), 1, 150)
+        b['stages'][i] = _valid_range(_dig(_small_cell(row, 22)), 1, 150)
+    return b
+
+
+def parse_small_band(row1, row2, row3):
+    """Parse one 小型 band from its 3 markdown sub-rows (R1/R2/R3).
+
+    Uses fixed 23-column layout when available, else falls back to the
+    anchor-based scan (locate 管模 label and walk columns).
+    Returns band dict (molds list len 6, speeds/times len 4, temps/stages len 3).
+    """
+    import re
+    if len(row1) >= 14 and '模' in _small_cell(row1, 2) or ('模' in _small_cell(row1, 0)):
+        b = _parse_small_rows(row1, row2, row3)
+        if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
+            return b
+    b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
+         'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
+         'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
+         'arrange': [], 'c14': [], 'c15': []}
+    if not row1:
+        return b
+
+    b['fan'] = _dig(row1[0])
+    b['item'] = normalize_item(row1[1] if len(row1) > 1 else '')
+
+    mold_idx = -1
+    for j, c in enumerate(row1):
+        if '模' in c or '管' in c:
+            mold_idx = j
+            break
+
+    if mold_idx >= 0:
+        after = row1[mold_idx + 1:]
+        for k in range(6):
+            if k < len(after):
+                b['molds'][k] = _dig(after[k])
+        for k in range(6, 10):
+            if k < len(after):
+                d = _dig(after[k])
+                b['speeds'][k - 6] = _valid_range(d, 100, 1400)
+        for c in after[10:]:
+            nums = re.findall(r'\d+', c)
+            if not nums:
+                continue
+            m = re.match(r'^\s*(\d)\s*$', c)
+            if m:
+                b['steam_pool'] = m.group(1)
+                break
+            if re.search(r'\d\s*[:~．.]?\s*\d\s*\d', c) or len(nums) >= 2:
+                b['steam_pool'] = nums[0]
+                tm = re.findall(r'\d{1,2}', c)[:4]
+                if len(tm) >= 2:
+                    hhmm = tm[0].zfill(2) + tm[1].zfill(2)
+                    b['pool_time'] = hhmm if _valid_range(hhmm, 600, 2359) else ''
+                break
+
+    if len(row2) > 1:
+        cent = []
+        for c in row2:
+            for n in re.findall(r'\d{4}', c):
+                if 600 <= int(n) <= 2359:
+                    cent.append(n)
+        b['centrifuge'] = (cent[0] if cent else '', cent[1] if len(cent) > 1 else '')
+        tm = []
+        for c in row2:
+            if re.search(r'\d{4}', c):
+                continue
+            for n in re.findall(r'\d{1,2}', c):
+                if 1 <= int(n) <= 20:
+                    tm.append(n)
+        b['speed_times'] = (tm + [''] * 4)[:4]
+
+    for ri, row in ((0, row1), (1, row2), (2, row3)):
+        digit_cells = [c for c in (row or []) if c is not None and _dig(c)]
+        if len(digit_cells) >= 2:
+            b['temps'][ri] = _valid_range(_dig(digit_cells[-2]), 1, 150)
+            b['stages'][ri] = _valid_range(_dig(digit_cells[-1]), 1, 150)
+
+    return b
+
+
+def _md_data_rows(md):
+    """Extract markdown table data rows as cell lists (skip header/separator)."""
+    lines = [l for l in md.split('\n') if l.startswith('|')]
+    parsed = [[c.strip() for c in l.strip('|').split('|')] for l in lines]
+    out = []
+    for row in parsed:
+        if any('---' in c for c in row):
+            continue
+        if sum(1 for c in row if _dig(c)) >= 2 or sum(1 for c in row if '模' in c or '時' in c) >= 1:
+            out.append(row)
+    return out
+
+
+def _small_crop(img, x0, x1, y0, y1, binarize=True, scale=2, thr=205):
+    import numpy as np
+    y1 = min(y1, img.shape[0])
+    x1 = min(x1, img.shape[1])
+    crop = img[y0:y1, x0:x1]
+    if crop.size == 0:
+        return None
+    g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    if binarize:
+        _, g = cv2.threshold(g, thr, 255, cv2.THRESH_BINARY)
+    if scale != 1:
+        g = cv2.resize(g, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    return cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
+
+
+def ocr_small_band(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, binarize=True):
+    """OCR one 小型 band strip (full width, band height) and parse its fields.
+
+    Returns band dict, or {} on failure. One API call per band.
+    """
+    pages = st.render_pages(pdf_path, 200)
+    img = pages[page_index]
+    crop = _small_crop(img, x0, x1, y0, y1, binarize=binarize, scale=scale)
+    if crop is None:
+        return {}
+    md = ocr_image(crop)
+    log.info('ocr_small_band %s p%d band_y=(%d,%d) -> %s', os.path.basename(pdf_path),
+             page_index + 1, y0, y1, 'ok' if md else 'FAIL')
+    if not md:
+        return {}
+    data_rows = _md_data_rows(md)
+    if not data_rows:
+        return {}
+    r1 = data_rows[0] if len(data_rows) >= 1 else []
+    r2 = data_rows[1] if len(data_rows) >= 2 else []
+    r3 = data_rows[2] if len(data_rows) >= 3 else []
+    return parse_small_band(r1, r2, r3)
+
+
+def ocr_small_strip(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, thr=205, raw=False):
+    """OCR a horizontal strip spanning several 小型 bands; parse into per-band dicts.
+
+    Returns dict {band_offset: band_dict}, band_offset relative to the strip's
+    first band. A strip containing N bands produces N dicts (some may be {}).
+    If raw=True, returns the raw markdown string instead.
+    """
+    pages = st.render_pages(pdf_path, 200)
+    img = pages[page_index]
+    crop = _small_crop(img, x0, x1, y0, y1, binarize=True, scale=scale, thr=thr)
+    if crop is None:
+        return {} if not raw else ''
+    md = ocr_image(crop)
+    log.info('ocr_small_strip %s p%d strip_y=(%d,%d) -> %s', os.path.basename(pdf_path),
+             page_index + 1, y0, y1, 'ok' if md else 'FAIL')
+    if raw:
+        return md or ''
+    if not md:
+        return {}
+    return parse_small_strip(md)
+
+
+def parse_small_strip(md, n_bands=None):
+    """Split strip markdown rows into per-band blocks and parse each band.
+
+    A band block starts at the row containing the 管模 label (R1). The following
+    rows are that band's R2/R3. Falls back to fixed 3-row grouping when no
+    管模 anchors are found.
+    """
+    data_rows = _md_data_rows(md)
+    if not data_rows:
+        return {}
+    anchors = [i for i, r in enumerate(data_rows) if any('模' in c for c in r)]
+    blocks = []
+    if anchors:
+        for k, a in enumerate(anchors):
+            end = anchors[k + 1] if k + 1 < len(anchors) else len(data_rows)
+            blocks.append(data_rows[a:min(end, a + 3)])
+    else:
+        blocks = [data_rows[i:i + 3] for i in range(0, len(data_rows), 3)]
+    out = {}
+    for k, blk in enumerate(blocks):
+        r1 = blk[0] if len(blk) >= 1 else []
+        r2 = blk[1] if len(blk) >= 2 else []
+        r3 = blk[2] if len(blk) >= 3 else []
+        out[k] = parse_small_band(r1, r2, r3)
+    return out
+
+
+def ocr_small_field(pdf_path, page_index, x0, x1, y0, y1, kind, scale=3, thr=205):
+    """OCR one narrow 小型 field crop; returns raw markdown (or '')."""
+    pages = st.render_pages(pdf_path, 200)
+    img = pages[page_index]
+    crop = _small_crop(img, x0, x1, y0, y1, binarize=True, scale=scale, thr=thr)
+    if crop is None:
+        return ''
+    md = ocr_image(crop)
+    log.info('ocr_small_field %s p%d %s box=(%d,%d,%d,%d) -> %s', os.path.basename(pdf_path),
+             page_index + 1, kind, x0, y0, x1 - x0, y1 - y0, 'ok' if md else 'FAIL')
+    return md or ''
+
+
+def _extract_numbers(text, lo=None, hi=None):
+    import re
+    out = []
+    for n in re.findall(r'\d{1,4}', text):
+        v = int(n)
+        if lo is not None and v < lo:
+            continue
+        if hi is not None and v > hi:
+            continue
+        out.append(n)
+    return out
+
+
+def _fill_small_field(b, kind, md):
+    """Fill a band dict field from a narrow-crop markdown read."""
+    if not md or not b:
+        return b
+    import re
+    rows = _md_data_rows(md)
+    cells = [c for row in rows for c in row]
+    if kind == 'cent':
+        ns = _extract_numbers(md, 500, 2400)
+        if len(ns) >= 2:
+            b['centrifuge'] = (ns[0], ns[1])
+        elif len(ns) == 1:
+            b['centrifuge'] = (ns[0], b['centrifuge'][1])
+    elif kind == 'speeds':
+        ns = [c for c in cells if c and re.fullmatch(r'\d{2,4}', c)][:4]
+        if len(ns) >= 2:
+            b['speeds'] = (ns + [''] * 4)[:4]
+    elif kind == 'times':
+        ns = [c for c in cells if c and re.fullmatch(r'\d{1,2}', c)][:4]
+        if len(ns) >= 2:
+            b['speed_times'] = (ns + [''] * 4)[:4]
+    elif kind == 'pool':
+        ns = _extract_numbers(md, 1, 99)
+        if ns:
+            b['steam_pool'] = ns[0]
+    elif kind == 'temps':
+        vals = _extract_numbers(md, 1, 150)
+        if len(vals) >= 3:
+            b['temps'] = vals[:3]
+    elif kind == 'stages':
+        vals = _extract_numbers(md, 1, 150)
+        if len(vals) >= 3:
+            b['stages'] = vals[:3]
+    elif kind == 'item':
+        s = ''
+        for row in rows:
+            for c in row:
+                if re.match(r'^\d{2,4}', c) and '模' not in c and '時' not in c:
+                    s = c
+                    break
+            if s:
+                break
+        if s:
+            b['item'] = s
+    return b
+
+
+def _fullness(b):
+    if not b:
+        return 0
+    n = 0
+    for v in b.values():
+        if isinstance(v, (list, tuple)):
+            n += sum(1 for x in v if x)
+        elif v:
+            n += 1
+    return n
+
+
+def _merge_fullest(a, b):
+    """Combine two band dicts from different reads; prefer the fuller one.
+
+    The fuller read is the base; the other only fills keys the base lacks.
+    This protects against one read returning merged/garbled values (page-bottom
+    strips merge mold cells) while still filling gaps from the weaker read.
+    """
+    if not a and not b:
+        return None
+    fa, fb = _fullness(a), _fullness(b)
+    if fa >= fb:
+        base, other = a, b
+    else:
+        base, other = b, a
+    out = dict(base or {})
+    for k, v in (other or {}).items():
+        cur = out.get(k)
+        if isinstance(cur, (list, tuple)):
+            ov = v if isinstance(v, (list, tuple)) else []
+            cur_l = list(cur)
+            for i in range(min(len(cur_l), len(ov))):
+                if not cur_l[i] and ov[i]:
+                    cur_l[i] = ov[i]
+            out[k] = tuple(cur_l) if isinstance(cur, tuple) else cur_l
+        elif cur in ('', None):
+            out[k] = v
+    return out
+
+
+def ocr_small_page(pdf_path, page_index, rows, cols, field_crops=False):
+    """Full 小型 page pipeline: 3-band strips + per-band full-width retry.
+
+    Pipeline:
+      1. Strips of 3 bands, full width, binarized.
+      2. Per-band full-width crop (also binarized) for every band.
+      3. Each band = _merge_fullest(strip_read, band_read) — the fuller read
+         wins, the other only fills gaps (Mistral is nondeterministic, so both
+         reads can succeed or fail on different calls).
+      4. Optional per-field narrow crops (field_crops=True). These HALLUCINATE
+         on the small form's 53-68px cells, so they are OFF by default.
+
+    Args:
+        rows: [(y0, y1)...] band rows.
+        cols: SMALL_COLS column x-boundaries list (kept for the field-crop path).
+    Returns:
+        {band_index: band_dict}
+    """
+    n = len(rows)
+    strip_reads = {}
+    group = []
+    for bi in range(n):
+        group.append(bi)
+        if len(group) == 3 or bi == n - 1:
+            y0 = rows[group[0]][0]
+            y1 = rows[group[-1]][1]
+            got = ocr_small_strip(pdf_path, page_index, y0, y1)
+            for k, b in got.items():
+                strip_reads[group[k]] = b
+            group = []
+
+    bands = {}
+    for bi in range(n):
+        y0, y1 = rows[bi]
+        band_read = ocr_small_band(pdf_path, page_index, y0, y1)
+        bands[bi] = _merge_fullest(strip_reads.get(bi), band_read) or {}
+
+    if field_crops:
+        field_boxes = {}
+        for bi in range(n):
+            y0 = rows[bi][0]
+            field_boxes[bi] = {
+                'item': (cols[1], cols[2], y0, y0 + 60),
+                'molds': (cols[3], cols[9], y0, y0 + 60),
+                'cent': (cols[3], cols[9], y0 + 60, y0 + 120),
+                'speeds': (cols[9], cols[13], y0, y0 + 60),
+                'times': (cols[9], cols[13], y0 + 60, y0 + 120),
+                'pool': (cols[13], cols[14], y0, y0 + 180),
+                'temps': (cols[21], cols[22], y0, y0 + 180),
+                'stages': (cols[22], cols[23], y0, y0 + 180),
+            }
+        for bi in range(n):
+            b = bands.get(bi) or {}
+            y0 = rows[bi][0]
+            for kind, (x0, x1, ya, yb) in field_boxes[bi].items():
+                need = False
+                if kind == 'cent':
+                    need = not (b.get('centrifuge') or ('', ''))[0]
+                elif kind == 'speeds':
+                    need = sum(1 for s in b.get('speeds', []) if s) < 2
+                elif kind == 'times':
+                    need = sum(1 for s in b.get('speed_times', []) if s) < 2
+                elif kind == 'pool':
+                    need = not b.get('steam_pool')
+                elif kind == 'temps':
+                    need = sum(1 for s in b.get('temps', []) if s) < 2
+                elif kind == 'stages':
+                    need = sum(1 for s in b.get('stages', []) if s) < 2
+                elif kind == 'item':
+                    need = not b.get('item')
+                if not need:
+                    continue
+                md = ocr_small_field(pdf_path, page_index, x0, x1, ya, yb, kind)
+                b = _fill_small_field(b, kind, md)
+                bands[bi] = b
+
+    for bi in range(n):
+        b = bands.setdefault(bi, {})
+        if not b.get('fan'):
+            b['fan'] = str(bi + 1)
+        if not b.get('arrange') and b.get('molds'):
+            b['arrange'] = list(b['molds'])
+    return bands

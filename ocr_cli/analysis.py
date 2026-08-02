@@ -15,6 +15,9 @@ import ocrx
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEBUG = os.path.join(ROOT, 'debug')
 
+SMALL_COLS = [48, 92, 167, 220, 272, 326, 379, 431, 484, 536, 606, 674, 740, 808, 876, 922,
+              974, 1026, 1080, 1134, 1186, 1240, 1308, 1374, 1472]
+
 
 def find_lines_robust(gray, thr_frac=0.10, vfrac=0.10, return_rowsums=False):
     bg = cv2.medianBlur(gray, 101)
@@ -440,6 +443,9 @@ def page_analysis(pdf_path, page_index, ocr_arrange=True, ocr=True):
             }
         if ocr:
             result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))
+    elif ftype == '小型':
+        if ocr:
+            result['auto_fields'] = ocrx.ocr_small_page(pdf_path, page_index, rows, SMALL_COLS)
     return result
 
 

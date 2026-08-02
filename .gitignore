@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 scan_entry/cache/
+scan_entry/logs/
 ocr_cli/tessdata/
 debug/
 *.pdf

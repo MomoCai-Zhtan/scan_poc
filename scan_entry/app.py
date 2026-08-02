@@ -18,6 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OCR = os.path.join(ROOT, 'ocr_cli')
 CSV_DIR = os.path.join(ROOT, 'csv')
 CACHE = os.path.join(ROOT, 'scan_entry', 'cache')
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+LOG_FILE = os.path.join(LOG_DIR, 'scan_entry.log')
 
 sys.path.insert(0, OCR)
 import analysis
@@ -31,9 +33,17 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 logger = logging.getLogger('scan_entry')
 logger.setLevel(logging.INFO)
 if not logger.handlers:
+    _fmt = logging.Formatter('[%(asctime)s] %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(message)s', datefmt='%H:%M:%S'))
+    _h.setFormatter(_fmt)
     logger.addHandler(_h)
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        _f = logging.FileHandler(LOG_FILE, encoding='utf-8')
+        _f.setFormatter(_fmt)
+        logger.addHandler(_f)
+    except Exception:
+        logger.warning('log file handler init failed: %s', LOG_FILE)
 
 
 def load_item_count():
@@ -76,6 +86,45 @@ def get_pdf(name):
     return path
 
 
+def _page_cache_path(name, page):
+    return os.path.join(CACHE, '%s_p%d_analysis.json' % (name.replace('.', '_'), page))
+
+
+def _page_cache_load(cache_path, name, page):
+    """回傳已快取的頁面 OCR 快照;PDF 變動(mtime 不同)或損毀則回 None。"""
+    try:
+        with open(cache_path, encoding='utf-8') as f:
+            data = json.load(f)
+        pdf_path = os.path.join(ROOT, name)
+        if os.path.exists(pdf_path) and data.get('_meta', {}).get('pdf_mtime') == os.path.getmtime(pdf_path):
+            return data.get('result')
+    except Exception:
+        pass
+    return None
+
+
+def _page_cache_save(cache_path, name, page, result):
+    try:
+        os.makedirs(CACHE, exist_ok=True)
+        payload = {
+            '_meta': {'pdf_mtime': os.path.getmtime(os.path.join(ROOT, name))},
+            'result': result,
+        }
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False)
+    except Exception:
+        logger.warning('page cache save failed: %s p%d', name, page)
+
+
+def _page_analysis_with_date(path, name, page):
+    result = analysis.page_analysis(path, page - 1)
+    roc, iso, disp = analysis.filename_date(name)
+    result['date_iso'] = iso
+    result['date_roc'] = roc
+    result['date_disp'] = disp
+    return result
+
+
 @app.route('/')
 def index():
     import time
@@ -110,7 +159,8 @@ def api_pdf(name):
 
 @app.route('/api/pdf/<path:name>/<int:page>')
 def api_pdf_page(name, page):
-    """Single page analysis with OCR. Returns one page with auto_fields."""
+    """Single page analysis with OCR. Returns one page with auto_fields.
+    結果以 PDF 為 key 快照至磁碟,換頁/重整不再重複 OCR。"""
     path = get_pdf(name)
     if not path:
         logger.warning('api_pdf_page not found: %s page=%d', name, page)
@@ -119,18 +169,20 @@ def api_pdf_page(name, page):
     if page < 1 or page > len(pages):
         logger.warning('api_pdf_page invalid page: %s page=%d (total=%d)', name, page, len(pages))
         return flask.jsonify({'error': 'invalid page'}), 404
-    logger.info('api_pdf_page: %s page=%d', name, page)
-    result = analysis.page_analysis(path, page - 1)
-    roc, iso, disp = analysis.filename_date(name)
-    result['date_iso'] = iso
-    result['date_roc'] = roc
-    result['date_disp'] = disp
+    cache_path = _page_cache_path(name, page)
+    result = _page_cache_load(cache_path, name, page)
+    if result is None:
+        logger.info('api_pdf_page OCR: %s page=%d', name, page)
+        result = _page_analysis_with_date(path, name, page)
+        _page_cache_save(cache_path, name, page, result)
+    else:
+        logger.info('api_pdf_page cache hit: %s page=%d', name, page)
     return flask.jsonify(result)
 
 
 @app.route('/api/pdf/<path:name>/<int:page>/ocr', methods=['POST'])
 def api_pdf_page_ocr(name, page):
-    """Re-trigger OCR for a single page (e.g., after user修正)."""
+    """Re-trigger OCR for a single page (e.g., after user修正) — 強制重算並更新快照。"""
     path = get_pdf(name)
     if not path:
         logger.warning('api_pdf_page_ocr not found: %s page=%d', name, page)
@@ -140,7 +192,8 @@ def api_pdf_page_ocr(name, page):
         logger.warning('api_pdf_page_ocr invalid page: %s page=%d', name, page)
         return flask.jsonify({'error': 'invalid page'}), 404
     logger.info('api_pdf_page_ocr re-trigger: %s page=%d', name, page)
-    result = analysis.page_analysis(path, page - 1)
+    result = _page_analysis_with_date(path, name, page)
+    _page_cache_save(_page_cache_path(name, page), name, page, result)
     return flask.jsonify(result)
 
 

@@ -363,3 +363,44 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 **實測**: `analyze_pdf(ocr=False)` 整本 1150729.pdf 1.4s (vs 原 >30s 逾時)。
 
 **狀態**: 伺服器已重啟載入; 瀏覽器端完整流程留待下次 session 手動驗證。
+
+## 2026-08-03 — 小型版面 OCR 管線 (M12)
+
+**需求**: 小型版面 (每番 3 子列 180px, 6 轉位) 自動辨識 → 39 欄 CSV, 與中型管線平行。
+
+### 版面分析
+- 1150702 p1 小型: 10 番 bands = [(328,508),(508,688),(688,870),(870,1050),(1050,1230),(1230,1411),(1411,1592),(1592,1772),(1772,1952),(1952,2133)]; 每番 180px = R1/R2/R3 各 60px
+- GT 只有 8 個有值番 (序 25,29,34,38,41,45,46,49,50), band8/9 真空白
+
+### GT 39 欄對應 (115.07.02.csv 小型列)
+- [4]品項 [8:14]轉位1~6 [14:16]離心 [16:20]轉速 [20:24]時間 [24]蒸養池 [25]入池時間(HHMM) [26:29]溫度 [29:32]階段 [32]位置 [33:39]排列
+- 中型列另有: (800/600/1200, 入池 0840/0925/1030/1145/1425/1515/1605/1715)
+
+### 23 欄 markdown 固定布局 (條帶/逐番讀取)
+- col0=番次 1=品項 2=管模 3-8=模具6 9-12=轉速 13=池(+入池) 21=溫度 22=階段
+- R2 col3=離心開始~結束、col9-12=時間; R3 col21/22=溫度3/階段3
+
+### 關鍵技術發現
+- **Mistral 非確定性**: 同條帶重複呼叫可能成功或全空; 狹欄 crop (53-68px) 會幻覺 (工程表/財報/2017 日期), 故逐欄 crop 預設關閉
+- **Mistral 新 key**: `xf5MEhtMMK3I82f9sW66XPj7BqnO0Abf` (已寫入 `.env`; 舊 key 401)
+- **`_merge_fullest`**: 條帶 + 逐番逐欄合併, 每欄選完整度最高的 read → 51.0% → 59.3% (185/312)
+- **`_valid_range`**: 轉速 100~1400、時間 1~20、溫度/階段 1~150、入池 0600~2359 — 清掉狹欄 crop 時代入 temp/stage 的離心/模具數字污染, 改為誠實空白
+- **序欄**: 用戶手動填寫; `collectBand` 不再自動遞增序號
+
+### 實作內容
+- `ocrx.py`: `parse_small_band`/`_parse_small_rows`(固定 23 欄 + anchor fallback)/`ocr_small_band`/`ocr_small_strip(raw=True)`/`parse_small_strip`/`_md_data_rows`/`_small_crop`/`_dig`/`_valid_range`/`_fullness`/`_merge_fullest`/`ocr_small_page`(條帶+逐番合併, `field_crops=False` 預設)
+- `analysis.py`: 小型分支 `result['auto_fields'] = ocrx.ocr_small_page(..., SMALL_COLS)`; `SMALL_COLS` 加入
+- `verify_baseline.py`: 新增 `read_gt_small`/`compare_band_small`, 誤差分佈 regex 加入 pool_time/temps/stages; docstring 更新
+- `index.html`: `mapField` 補 `pool_time`/`temps`/`stages`(回退 c14/c15);「序」預設空值 (`makeInput`), `collectBand` 移除自動遞增
+- 新增 `小型版面規格.md` (版面結構 + OCR 規則 + 衍生規則)
+- OCaml `<cmp>`、verify_baseline 流程、app.py 不須改 (自動走小型分支)
+
+### 驗證
+- 小型比對 1150702.pdf: 51.0% → `_merge_fullest` 後 **59.3% (185/312)**; 誤讀 pollution (如 temps[0]=1440) 已消除
+- 殘留錯誤皆結構性: 淡墨欄 (轉速/時間/溫度/階段) 掃描無墨 → 只能人工; cent/molds/item 數字誤讀 (17↔27、合併格 2446); 小型 crop 拼字: item 誤讀為「�� ��」→ 略過
+
+### 已知限制 (Blocked)
+- 淡墨欄在掃描影像中無墨, 任何 OCR 皆無法讀出; 僅能靠 GT 或人工輸入
+- `_merge_fullest` 引入的全張合併可能選到較完整但誤讀的 read (如 molds[4] 合併格)
+
+**狀態**: 小型 OCR 管線完成並驗證; 待 commit + push。

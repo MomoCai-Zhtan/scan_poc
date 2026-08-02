@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Baseline: compare hybrid OCR (page_analysis auto_fields) vs GT CSV for 中型 pages.
+"""Baseline: compare hybrid OCR (page_analysis auto_fields) vs GT CSV for 中型/小型 pages.
 
 Usage:
     python verify_baseline.py [--arrange] [pdf1.pdf pdf2.pdf ...]
-        --arrange   also OCR C13 circled digits and compare vs GT 排列1-4
+        --arrange   also OCR C13 circled digits / 排列 and compare vs GT 排列
                     (default: core fields only — fewer API calls)
         no pdf args → all 11507*.pdf with a matching GT CSV
 
@@ -34,6 +34,13 @@ def read_gt_mid(csv_path):
             continue
         out.setdefault(r[5], []).append(r)
     return out
+
+
+def read_gt_small(csv_path):
+    """Return list of 小型 rows in 序 order."""
+    with io.open(csv_path, encoding='utf-8-sig') as f:
+        rows = list(csv.reader(f))
+    return [r for r in rows[1:] if len(r) >= 39 and r[1] == '小型']
 
 
 def norm(s):
@@ -103,6 +110,90 @@ def compare_band(gt, b, do_arrange):
     return results, total, correct
 
 
+def compare_band_small(gt, b, do_arrange):
+    """Compare one GT 小型 row vs one OCR small band dict.
+    GT cols: 4=品項 8-13=轉位1-6 14-15=離心 16-19=轉速 20-23=時間
+             24=池 25=入池 26-28=溫度 29-31=階段 32=位置 33-38=排列1-6."""
+    results = []
+    total = correct = 0
+
+    def acc(ok, field, idx, g, o):
+        nonlocal total, correct
+        total += 1
+        if ok:
+            correct += 1
+        results.append((field, idx, g, o, ok))
+
+    gv, ov = norm(gt[4]), norm(b.get('item'))
+    acc(gv == ov, 'item', 0, gt[4], b.get('item'))
+
+    molds = b.get('molds') if isinstance(b.get('molds'), list) else []
+    for i in range(6):
+        g = norm(gt[8 + i])
+        if not g:
+            continue
+        o = norm(molds[i]) if i < len(molds) else ''
+        acc(g == o, 'molds', i, g, o)
+
+    bc = b.get('centrifuge') if isinstance(b.get('centrifuge'), (list, tuple)) else ('', '')
+    for i in range(2):
+        g = norm(gt[14 + i])
+        if not g:
+            continue
+        o = norm(bc[i]) if i < len(bc) else ''
+        acc(g == o, 'cent', i, g, o)
+
+    sp = b.get('speeds') or []
+    for i in range(4):
+        g = norm(gt[16 + i])
+        if not g:
+            continue
+        o = norm(sp[i]) if i < len(sp) else ''
+        acc(g == o, 'speeds', i, g, o)
+
+    tm = b.get('speed_times') or []
+    for i in range(4):
+        g = norm(gt[20 + i])
+        if not g:
+            continue
+        o = norm(tm[i]) if i < len(tm) else ''
+        acc(g == o, 'times', i, g, o)
+
+    g = norm(gt[24])
+    if g:
+        acc(g == norm(b.get('steam_pool')), 'pool', 0, g, b.get('steam_pool'))
+
+    g = norm(gt[25])
+    if g:
+        acc(g == norm(b.get('pool_time')), 'pool_time', 0, g, b.get('pool_time'))
+
+    temps = b.get('temps') or []
+    for i in range(3):
+        g = norm(gt[26 + i])
+        if not g:
+            continue
+        o = norm(temps[i]) if i < len(temps) else ''
+        acc(g == o, 'temps', i, g, o)
+
+    stages = b.get('stages') or []
+    for i in range(3):
+        g = norm(gt[29 + i])
+        if not g:
+            continue
+        o = norm(stages[i]) if i < len(stages) else ''
+        acc(g == o, 'stages', i, g, o)
+
+    if do_arrange:
+        arr = list(b.get('arrange') or [])
+        for i in range(6):
+            g = norm(gt[33 + i])
+            if not g:
+                continue
+            o = norm(arr[i]) if i < len(arr) else ''
+            acc(g == o, 'arrange', i, g, o)
+    return results, total, correct
+
+
 def perband_auto_fields(pdf_path, page_index, rows):
     """Per-band OCR (band + header composite) for EVERY band — no full-page pass.
     Measures the ceiling of the per-band crop approach."""
@@ -125,12 +216,36 @@ def verify_pdf(pdf_name, do_arrange, perband, summary):
     roc, iso, disp = A.filename_date(pdf_name)
     csv_path = os.path.join(CSV_DIR, disp + '.csv')
     gt = read_gt_mid(csv_path) if os.path.exists(csv_path) else None
+    gt_small = read_gt_small(csv_path) if os.path.exists(csv_path) else None
     pdf_path = os.path.join(ROOT, pdf_name)
     pages = A.st.render_pages(pdf_path, 200)
     used_shift = {}
     per_shift = {}
+    small_done = False
     for i in range(len(pages)):
         p = A.page_analysis(pdf_path, i, ocr_arrange=do_arrange)
+        if p['type'] == '小型':
+            if small_done:
+                continue
+            small_done = True
+            if not gt_small:
+                summary['warn'].append('%s p%d 小型: 無 GT' % (pdf_name, p['page']))
+                continue
+            bands = p.get('auto_fields') or {}
+            rows = list(bands.items())
+            per_shift['小型'] = rows
+            for bi, b in rows:
+                if bi >= len(gt_small):
+                    summary['warn'].append('%s 小型 番%d: GT 無對應列' % (pdf_name, bi + 1))
+                    continue
+                res, tot, ok = compare_band_small(gt_small[bi], b, do_arrange)
+                summary['tot'] += tot
+                summary['ok'] += ok
+                for field, idx, g, o, is_ok in res:
+                    if not is_ok:
+                        summary['errs'].append(
+                            '%s 小型 番%d %s[%d] GT=%r OCR=%r' % (pdf_name, bi + 1, field, idx, g, o))
+            continue
         if p['type'] != '中型':
             continue
         shift = p['shift']
@@ -185,7 +300,7 @@ def main():
     import collections
     err_cnt = collections.Counter()
     for e in summary['errs']:
-        m = re.search(r'(item|molds|cent|speeds|times|pool|arrange)\[(\d)\]', e)
+        m = re.search(r'(item|molds|cent|speeds|times|pool|pool_time|temps|stages|arrange)\[(\d)\]', e)
         if m:
             err_cnt[m.group(1) + '[' + m.group(2) + ']'] += 1
     lines.append('## 錯誤分佈')

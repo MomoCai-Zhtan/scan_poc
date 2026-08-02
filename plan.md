@@ -2,7 +2,7 @@
 
 > **協議來源**: OpenCode session `ses_0489d7cdfffeDaewfq4KXZcKsg` → Kilo 續接
 > **工作目錄**: `D:\OneDrive - 振添股份有限公司\RD_DATA\scan\2026\07-掃描`
-> **最後更新**: 2026-08-02
+> **最後更新**: 2026-08-03
 
 ## 1. 專案概述
 
@@ -136,6 +136,27 @@
 - 實測: `analyze_pdf(ocr=False)` 整本 1.4s (vs 原 >30s); 單頁 `/api/pdf/<name>/<page>` 不受影響
 
 ## 4. 開發里程碑
+
+### ✅ M12: 小型版面 OCR 管線 (2026-08-03)
+
+**需求**: 小型版面 (1150702 p1, 每番 3 子列 180px, 6 轉位) 自動辨識 → 39 欄 CSV。
+- 條帶 (10 番合併裁切) + 逐番 retry 的混合策略, `ocr_small_page()` 用 `_merge_fullest()` 逐欄合併兩者。
+
+**實作**:
+- `ocrx.py`: `parse_small_band`/`_parse_small_rows`(固定 23 欄 + anchor fallback)/`ocr_small_band`/`ocr_small_strip(raw=True)`/`parse_small_strip`/`_md_data_rows`/`_small_crop`/`_dig`/`_valid_range`/`_fullness`/`_merge_fullest`/`ocr_small_page`
+  - 23 欄 markdown 固定布局: col0=番次 1=品項 2=管模 3-8=模具6 9-12=轉速 13=池(+入池) 21=溫度 22=階段; R2 col3=離心開始~結束、col9-12=時間; R3 col21/22=溫度3/階段3
+  - `_valid_range`: 轉速 100~1400、時間 1~20、溫度/階段 1~150、入池 0600~2359 (清掉狹欄 crop 的離心/模具數字污染)
+  - 逐欄 crop 預設關閉 (`field_crops=False`): 狹欄 (53-68px) 會幻覺 (工程表/財報/2017 日期)
+- `analysis.py`: `SMALL_COLS` 加入; 小型分支 `result['auto_fields'] = ocrx.ocr_small_page(..., SMALL_COLS)`
+- `verify_baseline.py`: `read_gt_small`/`compare_band_small` + pool_time/temps/stages 誤差分佈 regex
+- `index.html`: `mapField` 補 `pool_time`/`temps`/`stages`(回退 c14/c15);「序」預設空值 + `collectBand` 移除自動遞增 (序 = 人工填寫)
+- 新增 `小型版面規格.md` (版面結構 + OCR 規則 + 衍生規則文件)
+
+**驗證** (1150702 p1, GT 8 個有值番, 312 欄位):
+- 51.0% → `_merge_fullest` 合併後 **59.3% (185/312)**
+- 誤讀 pollution 消除 (例: temps[0]=1440 → 誠實空白)
+- 殘留錯誤皆結構性: 淡墨欄 (轉速/時間/溫度/階段) 掃描無墨 → 只能人工; cent/molds/item 數字誤讀 (17↔27、合併格 2446); 小型 crop 拼字 item 「�� ��」略過
+- 已知限制: 淡墨欄任何 OCR 皆無法讀出, 僅能靠 GT 或人工; `_merge_fullest` 全張合併可能選到較完整但誤讀的 read (如 molds[4] 合併格)
 
 ### M1-M4: C14/C15 子列切割 + 離心時間 (已完成, 更新 2026-08-01)
 - M1: ✅ C14/C15 3 子列 `mid_band_layout()` 實現 (c14_cells/c15_cells)
