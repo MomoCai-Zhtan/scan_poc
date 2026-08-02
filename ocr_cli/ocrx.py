@@ -311,6 +311,9 @@ def ocr_c14c15_crop(pdf_path, page_index, cells, scale=5, pad=24, min_ink=0.02):
     if canvas is None:
         return None
     return ocr_image(canvas)
+
+
+def parse_arrange_circles(markdown):
     """Parse circled digits from a C13 (模具排列順序) crop markdown.
 
     Returns list of up to 4 digit strings, in reading order (left→right).

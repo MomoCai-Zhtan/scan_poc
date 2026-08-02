@@ -86,7 +86,7 @@
 const TS = {{ _ts }};
 if (window._ts && window._ts !== TS) location.reload();
 window._ts = TS;
-</script>
+
 const PDFS = {{ pdfs | tojson }};
 const HEADER = {{ header | tojson }};
 const ITEM_COUNT = {{ item_count | tojson }};
@@ -679,6 +679,7 @@ function buildTable(){
   }
 } finally {
   hideLoading();
+}
 }
 
 function shiftValue(p){
