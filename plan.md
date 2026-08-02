@@ -2,7 +2,7 @@
 
 > **協議來源**: OpenCode session `ses_0489d7cdfffeDaewfq4KXZcKsg` → Kilo 續接
 > **工作目錄**: `D:\OneDrive - 振添股份有限公司\RD_DATA\scan\2026\07-掃描`
-> **最後更新**: 2026-07-31
+> **最後更新**: 2026-08-02
 
 ## 1. 專案概述
 
@@ -53,8 +53,9 @@
 - `analysis.py` — `page_analysis()`, `row_bands()`, `detect_arrange_grid()`, `find_lines_robust()`
 - `structure.py` — PDF 渲染、線檢測、格子建構
 - `check_v4.py` — 勾選框 (上/下午) 偵測與判定
-- `index.html` — 完整 UI (頁面選擇、時間段下拉、列選擇、4格排列圖、表格輸入、匯出)
+- `index.html` — 三欄布局 + 逐番審查 (2026-08-02, 取代舊扁平表格 UI)
 - `test_flow.py` / `test_export.py` — 流程驗證 (均 IDENTICAL)
+- `verify_html.py` / `verify_js_braces.py` — 新增 UI 結構 + JS 配對驗證
 - **版面分析驗證**: 全 21 個掃描 PDF 驗證 — 小型每頁 10 番、中型每頁 6 番、無未知型別
 - **C12 切割**: `detect_arrange_grid` 已改回傳 4 方框, `/arrange/` 路由已實現
 - **OCR auto-fill** (NEW): `ocrx.py` + `analysis.py` Mistral OCR 整頁辨識, `index.html` 自動預填
@@ -116,6 +117,23 @@
 - `ocr_cli/analysis.py` `_add_arrange_order`: 3-mold 時 OCR 讀值 `[m1,m2,m3]` 重排為 `[m1,m2,'',m3]`, conflict 比對位置映射 `pos_map=[0,1,-1,2]`
 - `scan_entry/templates/index.html`: 排列自動帶入依 `p.type==='中型' && moldCount===3` 特判 — 排列3 留空、排列4←轉位3、排列5/6 留空; 其餘(含小型、4/2/1 模具)維持 排列(k+1)←轉位(k+1)
 - 驗證: 後端單元 5 情境 PASS (3/4/2/1 模具、衝突標記、單數字不採信); 前端映射模擬 PASS; `test_export.py`/`test_flow.py` IDENTICAL; 伺服器已重啟 (新 PID)
+
+### ✅ M10: 前端三欄布局 + 逐番審查 (2026-08-02, commit a27dfde)
+**依 §8 共識 + re-layout-plan.md 實作**:
+- `index.html` 全面重寫: 三欄 (Canvas 40% / 番次列表 12% / 階段表單 48%) + @media 768px 單欄
+- 逐番審查: 點番次/畫布高亮藍色, 已收集綠框+打勾, 空番灰字+「空」徽標
+- 三階段依序顯示: 基本資料(6欄) → 離心(16欄) → 蒸養(14欄), 進度條+上一步/下一步
+- 快捷鍵: Enter(下一階段/收集) · 1/2/3(切階段) · ←/→(切番) · Esc(清除欄位)
+- OCR 綠徽標 (手編後消失); 排列依轉位自動帶入 (中型3模具特判) + `arrange_conflict` 標黃; 生產數量公式帶入
+- `app.py`: 新增 `POST /api/collection/band` (逐番收集, 每番=1列); 單頁 API 補 `date_iso/roc/disp` (原缺日期)
+- 新增 `verify_html.py` + `verify_js_braces.py` (含 node --check 語法)
+- 順帶修復: `loadPdfs()` 的 `PdfS` ReferenceError (原會中斷所有事件綁定)
+- 驗證: verify 全 PASS; `test_flow.py`/`test_export.py` IDENTICAL; 冒煙 API OK
+
+### ✅ M11: 結構 API 效能修復 (2026-08-02)
+- **Bug**: `/api/pdf/<name>` (前端 openPdf 僅取頁數) 原 `analyze_pdf()` 對每一頁都跑 OCR → 21 頁逾時 (>30s)
+- **修復**: `page_analysis(pdf, idx, ocr=True)` / `analyze_pdf(pdf, ocr=False)` 加參數; `/api/pdf/<name>` 改 `ocr=False` (結構免 OCR); 診斷工具/單頁 API 維持 OCR
+- 實測: `analyze_pdf(ocr=False)` 整本 1.4s (vs 原 >30s); 單頁 `/api/pdf/<name>/<page>` 不受影響
 
 ## 4. 開發里程碑
 

@@ -348,3 +348,18 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 - `test_flow.py` 4 份 IDENTICAL / `test_export.py` IDENTICAL
 - API 冒煙: `/api/pdf/1150729.pdf/2` 回傳日期+auto_fields,`POST /api/collection/band` ok,`GET/DELETE /api/collection` ok
 - 伺服器已重啟載入新 code
+
+### 同日效能問題: `/api/pdf/<name>` 逾時 (M11)
+
+**症狀**: 前端 openPdf 呼叫結構 API 逾時 (>30s), 頁面「沒有反應」。
+
+**根因**: `/api/pdf/<name>` 註解寫「structure only, no OCR」, 但 `analyze_pdf()` 內部對每一頁都呼叫 `page_analysis()`, 而 中型 頁會觸發 Mistral OCR → 整本 21 頁逐一 OCR。
+
+**修復**:
+- `ocr_cli/analysis.py`: `page_analysis(pdf, idx, ocr=True)`、`analyze_pdf(pdf, ocr=False)` 新增 `ocr` 參數; 中型分支 `if ocr:` 才跑 `ocr_auto_fields`
+- `scan_entry/app.py`: `/api/pdf/<name>` 改 `analysis.analyze_pdf(path, ocr=False)`; 單頁 API `/api/pdf/<name>/<page>` 維持 OCR
+- 診斷工具 (`verify_baseline`/`batch_analysis` 等) 直接呼叫 `page_analysis`/`analyze_pdf`, 預設 `ocr=True` 不受影響
+
+**實測**: `analyze_pdf(ocr=False)` 整本 1150729.pdf 1.4s (vs 原 >30s 逾時)。
+
+**狀態**: 伺服器已重啟載入; 瀏覽器端完整流程留待下次 session 手動驗證。

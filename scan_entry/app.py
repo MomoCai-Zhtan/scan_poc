@@ -105,7 +105,7 @@ def api_pdf(name):
         logger.warning('api_pdf not found: %s', name)
         return flask.jsonify({'error': 'not found'}), 404
     logger.info('api_pdf full: %s', name)
-    return flask.jsonify(analysis.analyze_pdf(path))
+    return flask.jsonify(analysis.analyze_pdf(path, ocr=False))
 
 
 @app.route('/api/pdf/<path:name>/<int:page>')

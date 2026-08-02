@@ -410,7 +410,7 @@ def ocr_auto_fields(pdf_path, page_index, rows, arrange_boxes=None, mid_layout=N
         return {}
 
 
-def page_analysis(pdf_path, page_index, ocr_arrange=True):
+def page_analysis(pdf_path, page_index, ocr_arrange=True, ocr=True):
     img = st.render_pages(pdf_path, 200)[page_index]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     hl, vl, rowsums = find_lines_robust(gray, return_rowsums=True)
@@ -438,7 +438,8 @@ def page_analysis(pdf_path, page_index, ocr_arrange=True):
                 'cols': cols,
                 'bands': [mid_band_layout(y0, y1, cols) for y0, y1 in rows],
             }
-        result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))
+        if ocr:
+            result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))
     return result
 
 
@@ -453,13 +454,13 @@ def filename_date(pdf_name):
     return '%03d%02d%02d' % (roc, mm, dd), iso, disp
 
 
-def analyze_pdf(pdf_path):
+def analyze_pdf(pdf_path, ocr=True):
     name = os.path.basename(pdf_path)
     roc, iso, disp = filename_date(name)
     pages = st.render_pages(pdf_path, 200)
     result = {'pdf': name, 'date_roc': roc, 'date_iso': iso, 'date_disp': disp, 'pages': []}
     for i in range(len(pages)):
-        result['pages'].append(page_analysis(pdf_path, i))
+        result['pages'].append(page_analysis(pdf_path, i, ocr=ocr))
     return result
 
 
