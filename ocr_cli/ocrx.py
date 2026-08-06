@@ -193,18 +193,21 @@ def parse_mid_table(markdown):
                 fan = m.group(1)
                 break
 
-        # 品項: cell 1 (strip "管模"), normalize to canonical GT form
-        item = r1[1] if len(r1) > 1 else ''
-        if '管模' in item:
-            item = item.replace('管模', '').strip()
-        item = normalize_item(item)
-
-        # Find "管模" position to anchor mold extraction
+        # Find "管模" position first — anchors both item (cell right before it) and mold
+        # extraction. A fixed index for 品項 breaks whenever the OCR table gains/loses a
+        # leading cell (e.g. 番次 split across two cells), silently pulling in C3's content.
         mold_label = -1
         for j, c in enumerate(r1):
             if '管模' in c:
                 mold_label = j
                 break
+
+        # 品項: cell right before "管模" label (anchored); falls back to cell 1 if label missing
+        item_idx = mold_label - 1 if mold_label >= 1 else 1
+        item = r1[item_idx] if item_idx < len(r1) else ''
+        if '管模' in item:
+            item = item.replace('管模', '').strip()
+        item = normalize_item(item)
 
         # Mold numbers: numeric cells after 管模 label (up to 4, 中型 轉位1-4)
         molds = []
@@ -421,6 +424,151 @@ def normalize_item(raw):
     return s
 
 
+_ITEM_VOCAB = None
+
+
+def _item_vocab():
+    """載入 scan_entry/item_count.csv 的品項欄作為已知詞彙表 (供可信度檢查)。"""
+    global _ITEM_VOCAB
+    if _ITEM_VOCAB is None:
+        import csv
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             'scan_entry', 'item_count.csv')
+        vocab = set()
+        try:
+            with open(path, encoding='utf-8-sig') as f:
+                for row in csv.reader(f):
+                    if row and row[0] and row[0] != '品項':
+                        vocab.add(row[0])
+        except OSError:
+            pass
+        _ITEM_VOCAB = vocab
+    return _ITEM_VOCAB
+
+
+def flag_item_uncertain(bands):
+    """為品項標記可信度旗標 (只加提示,不覆蓋原值,供前端顯示複核提醒):
+      - 'vocab':    正規化後的品項不在 item_count.csv 已知詞彙表內
+      - 'neighbor': 與同頁最近的前後「真實讀到」番次品項不同,但那兩個前後番彼此相同
+                     (同一批生產通常連續多番品項不變,單一番不同很可能是誤讀,例如
+                     欄位錯位讀到鄰欄數字)
+
+    只評估「真實讀到」的品項 (本輪非繼承而來),避免跟既有「繼承」徽標語意重疊。
+    """
+    vocab = _item_vocab()
+    keys = sorted(k for k in bands if isinstance(bands.get(k), dict))
+
+    def real_item(k):
+        b = bands[k]
+        if ('item', 0) in (b.get('inherited') or []):
+            return None
+        return b.get('item') or None
+
+    for idx, bi in enumerate(keys):
+        b = bands[bi]
+        item = real_item(bi)
+        if not item:
+            continue
+        reasons = []
+        if vocab and item not in vocab:
+            reasons.append('vocab')
+        prev_item = next((real_item(keys[j]) for j in range(idx - 1, -1, -1) if real_item(keys[j])), None)
+        next_item = next((real_item(keys[j]) for j in range(idx + 1, len(keys)) if real_item(keys[j])), None)
+        if prev_item and next_item and prev_item == next_item and item != prev_item:
+            reasons.append('neighbor')
+        if reasons:
+            b['item_uncertain'] = reasons
+    return bands
+
+
+# 繼承欄位定義: (field, [indexes]) — 空白時從上一番複製
+# speeds[1..3] = 慢/中/高速轉速 (加料轉速不繼承, 使用者明示)
+# temps[0..2]  = 蒸養溫度1~3
+# stages[0..2] = 蒸養階段1~3
+# item         = 品項 (純字串, 從上一番; 使用者明示「序」忽略)
+INHERIT_FIELDS = {
+    'speeds': [1, 2, 3],
+    'temps': [0, 1, 2],
+    'stages': [0, 1, 2],
+    'item': None,   # None = 純字串欄位, 整欄繼承
+}
+
+
+def inherit_fields(bands):
+    """向前繼承:空白欄位從上一番複製。
+
+    繼承欄位:
+      - speeds[1..3] 慢/中/高速轉速 (加料轉速不繼承)
+      - temps[0..2]  蒸養溫度1~3
+      - stages[0..2] 蒸養階段1~3
+      - item         品項 (品項為空且模具編號非空才繼承; 「序」忽略)
+      - pool_time    入池時間 (同蒸養池回填: 後番空白入池時間 = 同池前番的入池時間)
+
+    只填補空白,不覆蓋已有值。
+    列表欄位 (speeds/temps/stages) 繼承來源 = 最近有值番次 (含繼承值);
+    品項繼承來源 = 最近「真實讀到的 C2」(非繼承值, 避免連鎖繼承錯誤擴散)。
+    被繼承的欄位記錄在 band['inherited'] = [(field, idx), ...] 供前端標示。
+    """
+    prev = {}
+    pool_times = {}   # steam_pool -> 最近入池時間
+    for bi in sorted(bands.keys()):
+        b = bands[bi]
+        if not isinstance(b, dict):
+            continue
+        inherited = []
+
+        # --- 列表欄位繼承 (speeds[1..3] / temps / stages) ---
+        for field, idxs in INHERIT_FIELDS.items():
+            if field == 'item':
+                continue
+            vals = b.get(field)
+            if not isinstance(vals, (list, tuple)):
+                continue
+            pv = prev.get(field)
+            if not pv:
+                continue
+            for i in idxs:
+                if i < len(vals) and not vals[i] and i < len(pv) and pv[i]:
+                    vals[i] = pv[i]
+                    inherited.append((field, i))
+
+        # --- 品項繼承: 品項為空 且 模具編號非空 才繼承 ---
+        # 來源 = 最近「真實讀到的 C2 品項」(非繼承值), 避免連鎖繼承錯誤擴散
+        if not b.get('item') and prev.get('item'):
+            molds = b.get('molds') or []
+            if any(molds):
+                b['item'] = prev['item']
+                inherited.append(('item', 0))
+
+        # --- 入池時間同池回填: 後番空白入池時間 = 同池前番的入池時間 ---
+        pool = b.get('steam_pool')
+        if pool and not b.get('pool_time') and pool in pool_times:
+            b['pool_time'] = pool_times[pool]
+            inherited.append(('pool_time', 0))
+
+        if inherited:
+            b['inherited'] = inherited
+
+        # --- 更新 prev ---
+        # 品項: 只記錄「真實讀到的 C2」(非繼承值), 避免連鎖繼承錯誤擴散
+        # 列表欄位 (speeds/temps/stages): 記錄有值欄位 (含繼承值, 讓下一番可繼續繼承)
+        for field, idxs in INHERIT_FIELDS.items():
+            if field == 'item':
+                if b.get('item') and ('item', 0) not in inherited:
+                    prev['item'] = b['item']
+                continue
+            vals = b.get(field)
+            if not isinstance(vals, (list, tuple)):
+                continue
+            if any(i < len(vals) and vals[i] for i in idxs):
+                prev[field] = list(vals)
+
+        # --- 更新 pool_times: 記錄該池的入池時間 (含繼承值) ---
+        if pool and b.get('pool_time'):
+            pool_times[pool] = b['pool_time']
+    return bands
+
+
 def _dig(cell):
     import re
     m = re.search(r'\d+', cell or '')
@@ -513,13 +661,18 @@ def parse_small_band(row1, row2, row3):
         return b
 
     b['fan'] = _dig(row1[0])
-    b['item'] = normalize_item(row1[1] if len(row1) > 1 else '')
 
+    # Find "模/管" label position first — anchors item (cell right before it), same
+    # fix as parse_mid_table(): a fixed index for 品項 breaks whenever this fallback's
+    # column count shifts (it only runs after the fixed-layout check already failed).
     mold_idx = -1
     for j, c in enumerate(row1):
         if '模' in c or '管' in c:
             mold_idx = j
             break
+
+    item_idx = mold_idx - 1 if mold_idx >= 1 else 1
+    b['item'] = normalize_item(row1[item_idx] if item_idx < len(row1) else '')
 
     if mold_idx >= 0:
         after = row1[mold_idx + 1:]

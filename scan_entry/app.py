@@ -251,10 +251,19 @@ def add_band_to_collection():
     }
     if sid not in COLLECTIONS:
         COLLECTIONS[sid] = []
-    COLLECTIONS[sid].append(item)
-    logger.info('collection band POST sid=%s pdf=%s page=%d band=%s total=%d',
-                sid[:8], item['pdf'], item['page'], item['band'], len(COLLECTIONS[sid]))
-    return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
+    coll = COLLECTIONS[sid]
+    existing = next((i for i, it in enumerate(coll) if it.get('kind') == 'band'
+                      and it.get('pdf') == item['pdf'] and it.get('page') == item['page']
+                      and it.get('band') == item['band']), None)
+    updated = existing is not None
+    if updated:
+        coll[existing] = item
+    else:
+        coll.append(item)
+    logger.info('collection band POST sid=%s pdf=%s page=%d band=%s %s total=%d',
+                sid[:8], item['pdf'], item['page'], item['band'],
+                'updated' if updated else 'added', len(coll))
+    return flask.jsonify({'ok': True, 'count': len(coll), 'updated': updated})
 
 
 @app.route('/api/collection', methods=['DELETE'])

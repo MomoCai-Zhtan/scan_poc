@@ -442,10 +442,12 @@ def page_analysis(pdf_path, page_index, ocr_arrange=True, ocr=True):
                 'bands': [mid_band_layout(y0, y1, cols) for y0, y1 in rows],
             }
         if ocr:
-            result['auto_fields'] = ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))
+            result['auto_fields'] = ocrx.flag_item_uncertain(ocrx.inherit_fields(
+                ocr_auto_fields(pdf_path, page_index, rows, arrange, result.get('mid_layout'))))
     elif ftype == '小型':
         if ocr:
-            result['auto_fields'] = ocrx.ocr_small_page(pdf_path, page_index, rows, SMALL_COLS)
+            result['auto_fields'] = ocrx.flag_item_uncertain(ocrx.inherit_fields(
+                ocrx.ocr_small_page(pdf_path, page_index, rows, SMALL_COLS)))
     return result
 
 

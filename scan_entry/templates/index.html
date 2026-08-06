@@ -31,8 +31,9 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px; }
-  .layout-body { flex: 1; min-height: 0; display: flex; gap: 12px; }
-  .canvas-col { flex: 0 0 40%; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .layout-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+  .layout-row { flex: 1; min-height: 0; display: flex; gap: 12px; }
+  .canvas-col { flex: 0 0 45%; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
   .canvas-wrap { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
   .canvas-toolbar { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; gap: 12px; align-items: center;
                     background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 5px;
@@ -48,10 +49,13 @@
   .lg-cur { background: rgba(66,133,244,.3); border: 1px solid var(--blue); }
   .lg-col { background: rgba(52,168,83,.25); border: 1px solid var(--green); }
   .grid-toggle { margin-left: 10px; cursor: pointer; user-select: none; }
-  .band-list { flex: 0 0 12%; min-width: 96px; max-width: 150px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-y: auto; overscroll-behavior: contain; }
-  .band-list h4 { margin: 0 0 8px; font-size: 13px; color: #444; }
+  .band-list { flex: 0 0 auto; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 6px;
+               padding: 8px 10px; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+  .band-list h4 { margin: 0; font-size: 13px; color: #444; flex: 0 0 auto; white-space: nowrap; }
+  #bandList { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
+              overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; padding-bottom: 2px; }
   .band-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px;
-               margin-bottom: 6px; cursor: pointer; font-size: 13px; user-select: none; }
+               flex: 0 0 auto; white-space: nowrap; cursor: pointer; font-size: 13px; user-select: none; }
   .band-item:hover { background: #f5f5f5; }
   .band-item.on { background: #e8f0fe; border-color: var(--blue); }
   .band-item.collected { border-color: var(--green); background: #e6f4ea; }
@@ -61,40 +65,43 @@
   .band-item .num { font-weight: bold; }
   .band-item.empty { color: #999; }
   .band-empty-badge { background: #eee; color: #666; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
-  .cnt-badge { background: var(--blue); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 5px; }
 
-  .form-col { flex: 1 1 48%; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .form-col { flex: 1 1 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
   .page-status { font-size: 13px; color: #666; margin-bottom: 8px; }
   .stage-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .progress-bar { flex: 1; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--blue); width: 0; transition: width .2s ease; }
   #stageLabel { font-size: 13px; color: #444; white-space: nowrap; }
-  .stage-card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
-  .stage-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .stage-head h4 { margin: 0; font-size: 15px; }
+  .stage-card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+  .stage-head { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 0; }
+  .stage-head h4 { margin: 0; font-size: 14px; }
   .collected-tag { background: var(--green); color: #fff; font-size: 12px; border-radius: 3px; padding: 2px 8px; }
-  .auto-info { background: #f8f9fa; border: 1px dashed var(--line); border-radius: 4px; padding: 6px 10px;
-               font-size: 13px; color: #555; margin-bottom: 12px; }
-  .field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .field-row label { flex: 0 0 132px; text-align: right; font-size: 14px; color: #333; }
-  .field-row input, .field-row select { flex: 1; min-width: 0; padding: 6px 8px; font-size: 14px;
-                                        border: 1px solid var(--line); border-radius: 4px; }
+  .auto-info { background: #f8f9fa; border: 1px dashed var(--line); border-radius: 4px; padding: 4px 8px;
+               font-size: 12px; color: #555; margin: 0 0 8px; }
+  .field-row { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+  .field-row:last-child { margin-bottom: 0; }
+  .field-row label { flex: 0 0 100px; text-align: right; font-size: 13px; color: #333; }
+  .field-row input, .field-row select { flex: 1; min-width: 0; padding: 4px 6px; font-size: 13px;
+                                        border: 1px solid var(--line); border-radius: 0; }
   .field-row input:focus, .field-row select:focus { border-color: var(--blue); outline: none; }
   .field-row input.has-ocr { background: #e8f5e9; }
   .field-row input.auto-warn { background: #fef9e7; border-color: var(--warn) !important; }
   .field-row.grid-row { display: flex; gap: 6px; }
-  .field-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .field-cell label { font-size: 11px; text-align: center; color: #333; line-height: 1.1;
+  .field-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .field-cell label { flex: none; font-size: 10px; text-align: center; color: #333; line-height: 1.1;
                       display: block; margin: 0; padding: 0; }
-  .field-cell input, .field-cell select { width: 100%; padding: 4px 6px; font-size: 13px;
-                                          border: 1px solid var(--line); border-radius: 4px; }
-  .form-section { border: 1px solid var(--line); border-radius: 6px; background: #fff;
-                  margin-bottom: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .field-cell input, .field-cell select { flex: none; width: 100%; padding: 3px 4px; font-size: 12px;
+                                          border: 1px solid var(--line); border-radius: 0; }
+  .form-section { border: 1px solid var(--line); border-radius: 0; background: #fff;
+                  margin: 0 0 8px; overflow: hidden; box-shadow: none; }
+  .form-section:last-child { margin-bottom: 0; }
   .form-section .section-head { color: #fff; font-size: 12px; font-weight: 700;
-                                padding: 5px 10px; user-select: none; }
-  .form-section .section-body { padding: 8px 10px; }
+                                padding: 3px 8px; user-select: none; }
+  .form-section .section-body { padding: 8px; }
   .ocr-badge { background: var(--green); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 6px;
                flex: 0 0 auto; }
+  .inherit-badge { background: var(--warn); color: #fff; font-size: 11px; border-radius: 3px; padding: 1px 6px;
+                   flex: 0 0 auto; }
   .form-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
   .form-actions button { padding: 8px 16px; font-size: 14px; }
   .shortcut-hint { font-size: 12px; color: #888; margin-top: 10px; line-height: 1.6; }
@@ -103,10 +110,8 @@
 
   @media (max-width: 768px) {
     body { height: auto; }
-    .layout-body { flex-direction: column; height: auto; }
-    .canvas-col, .band-list, .form-col { width: 100%; flex: none; max-width: none; height: auto; overflow: visible; }
-    .band-list { display: flex; flex-wrap: wrap; gap: 6px; }
-    .band-item { margin-bottom: 0; }
+    .layout-row { flex-direction: column; height: auto; }
+    .canvas-col, .form-col { width: 100%; flex: none; max-width: none; height: auto; overflow: visible; }
     .field-row label { flex: 0 0 96px; }
     .field-row.grid-row { flex-wrap: wrap; }
     .field-cell { flex: 1 1 48%; }
@@ -135,36 +140,38 @@
 <main id="main">
   <div id="emptyState" class="empty-state">請選擇上方 PDF 開始審查</div>
   <div id="layoutBody" class="layout-body" style="display:none">
-    <div class="canvas-col">
-      <div class="canvas-wrap">
-        <div class="canvas-toolbar">
-          <span class="toolbar-drag" title="拖曳移動">⠿</span>
-          <label><input type="checkbox" id="gridToggle" checked> 顯示格線</label>
-          <button id="btnReOcr" class="toolbar-btn" title="強制重新 OCR 目前頁並更新快照">重新 OCR</button>
-        </div>
-        <canvas id="scanCanvas"></canvas>
-        <div class="legend">藍色<span class="lg-cur"></span>目前番次&nbsp;&nbsp;綠色<span class="lg-col"></span>已收集</div>
-      </div>
-    </div>
     <div class="band-list">
       <h4>番次列表</h4>
       <div id="bandList"></div>
     </div>
-    <div class="form-col">
-      <div id="pageStatus" class="page-status"></div>
-      <div class="stage-progress">
-        <button id="btnStagePrev" class="nav-btn">上一步</button>
-        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
-        <span id="stageLabel"></span>
-        <button id="btnStageNext" class="nav-btn">下一步</button>
+    <div class="layout-row">
+      <div class="canvas-col">
+        <div class="canvas-wrap">
+          <div class="canvas-toolbar">
+            <span class="toolbar-drag" title="拖曳移動">⠿</span>
+            <label><input type="checkbox" id="gridToggle" checked> 顯示格線</label>
+            <button id="btnReOcr" class="toolbar-btn" title="強制重新 OCR 目前頁並更新快照">重新 OCR</button>
+          </div>
+          <canvas id="scanCanvas"></canvas>
+          <div class="legend">藍色<span class="lg-cur"></span>目前番次&nbsp;&nbsp;綠色<span class="lg-col"></span>已收集</div>
+        </div>
       </div>
-      <div id="stageForm"></div>
-      <div class="form-actions">
-        <button id="btnAddBand" class="primary">加入集合 (Enter)</button>
-        <button id="btnResetBand">重置此番</button>
-      </div>
-      <div class="shortcut-hint">
-        快捷鍵: Enter=下一步/收集 · 1/2/3=切階段 · ←/→=切換番次 · Esc=清除欄位
+      <div class="form-col">
+        <div id="pageStatus" class="page-status"></div>
+        <div class="stage-progress">
+          <button id="btnStagePrev" class="nav-btn">上一步</button>
+          <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+          <span id="stageLabel"></span>
+          <button id="btnStageNext" class="nav-btn">下一步</button>
+        </div>
+        <div id="stageForm"></div>
+        <div class="form-actions">
+          <button id="btnAddBand" class="primary">加入集合 (Enter)</button>
+          <button id="btnResetBand">重置此番</button>
+        </div>
+        <div class="shortcut-hint">
+          快捷鍵: Enter=下一步/收集 · 1/2/3=切階段 · ←/→=切換番次 · Esc=清除欄位
+        </div>
       </div>
     </div>
   </div>
@@ -225,7 +232,7 @@ let totalPages = 0;
 let analysisData = null;      // 單頁分析 + auto_fields + 日期
 let currentBand = null;       // 當前選中番次 index
 let currentStage = 0;         // 0=基本 1=離心 2=蒸養
-let bandData = {};            // bandIdx -> {vals:{col:val}, ocr:{col:true}}
+let bandData = {};            // bandIdx -> {vals:{col:val}, ocr:{col:true}, inherited:{col:true}}
 let collectedBands = {};      // bandIdx -> 收集次數
 let collectionCount = 0;      // 集合總列數 (server count)
 let pageTotalBands = 0;
@@ -322,9 +329,19 @@ function mapField(csvCol, bf){
   }
 }
 
+function inheritedFieldToCol(field, idx){
+  // 後端 inherit_fields 的 (field, idx) → CSV 欄名
+  if (field === "item") return "品項";
+  if (field === "pool_time") return "入池時間";
+  if (field === "speeds") return ["", "慢速轉速", "中速轉速", "高速轉速"][idx];
+  if (field === "temps") return "蒸養溫度" + (idx + 1);
+  if (field === "stages") return "蒸養階段" + (idx + 1);
+  return null;
+}
+
 function initBand(k){
   if (bandData[k]) return;
-  bandData[k] = {vals: {}, ocr: {}};
+  bandData[k] = {vals: {}, ocr: {}, inherited: {}, autoCalc: {}};
   const bf = bandInfo(k);
   if (bf){
     STAGES.forEach(s => s.cols.forEach(c => {
@@ -334,6 +351,13 @@ function initBand(k){
         bandData[k].ocr[c] = true;
       }
     }));
+    // 繼承標示: 被繼承的欄位標記 (徽標顯示「繼承」)
+    (bf.inherited || []).forEach(([field, idx]) => {
+      const col = inheritedFieldToCol(field, idx);
+      if (col && bandData[k].vals[col]){
+        bandData[k].inherited[col] = true;
+      }
+    });
   }
   if (!bandData[k].vals["時段"]) bandData[k].vals["時段"] = analysisData.shift || "下午";
   recomputeDerived(k);
@@ -356,13 +380,18 @@ function arrangeSource(k, pai){
 function recomputeDerived(k){
   const d = bandData[k];
   if (!d) return;
-  // 生產數量(支數) = 品項對照(支/模具) × 模具個數;僅空欄自動帶入
+  if (!d.autoCalc) d.autoCalc = {};
+  // 生產數量(支數) = 品項對照(支/模具) × 模具個數;空欄或仍是自動帶入值(未被人工手動修改過)才重算
+  const qtyCol = "生產數量(支數)";
   const item = (d.vals["品項"] || "").trim();
   const per = ITEM_COUNT[item];
-  if (!d.vals["生產數量(支數)"] && per){
+  if ((!d.vals[qtyCol] || d.autoCalc[qtyCol]) && per){
     let n = 0;
     for (let m = 1; m <= 6; m++){ if (d.vals["轉位" + m]) n++; }
-    if (n > 0) d.vals["生產數量(支數)"] = String(per * n);
+    if (n > 0){
+      d.vals[qtyCol] = String(per * n);
+      d.autoCalc[qtyCol] = true;
+    }
   }
   // 排列:OCR 圈選值優先,無則依轉位(中型3模具特判);僅空欄自動帶入
   const bf = bandInfo(k);
@@ -428,11 +457,10 @@ function buildStageForm(){
   const title = document.createElement("h4");
   title.textContent = "番 " + (currentBand + 1) + " · 階段 " + (currentStage + 1) + ": " + stage.name;
   head.appendChild(title);
-  const cnt = collectedBands[currentBand] || 0;
-  if (cnt){
+  if (collectedBands[currentBand]){
     const tag = document.createElement("span");
     tag.className = "collected-tag";
-    tag.textContent = "已收集 ×" + cnt;
+    tag.textContent = "已收集";
     head.appendChild(tag);
   }
   card.appendChild(head);
@@ -465,6 +493,10 @@ function buildStageForm(){
     inp.dataset.col = col;
     const handleEdit = () => {
       setVal(currentBand, col, inp.value, false);
+      if (col === "生產數量(支數)"){
+        const d2 = bandData[currentBand];
+        if (d2.autoCalc) d2.autoCalc[col] = false;   // 人工手動改過,之後品項/轉位變動不再覆蓋
+      }
       if (col === "品項" || col.startsWith("轉位")){
         recomputeDerived(currentBand);
         syncFieldDom("生產數量(支數)");
@@ -492,10 +524,25 @@ function buildStageForm(){
       badge.textContent = "OCR";
       el.appendChild(badge);
     }
+    // 繼承標示: 從上一番複製的欄位 (橙色徽標, 提示人工確認)
+    if (d.inherited && d.inherited[col] && d.vals[col]){
+      const badge = document.createElement("span");
+      badge.className = "inherit-badge";
+      badge.textContent = "繼承";
+      badge.title = "從上一番自動帶入,請確認";
+      el.appendChild(badge);
+    }
     const bf = bandInfo(currentBand);
     if (bf && bf.arrange_conflict && col.startsWith("排列")){
       inp.classList.add("auto-warn");
       inp.title = "OCR 排列順序與轉位不符,請人工確認";
+    }
+    if (bf && bf.item_uncertain && bf.item_uncertain.length && col === "品項"){
+      inp.classList.add("auto-warn");
+      const msgs = [];
+      if (bf.item_uncertain.includes("vocab")) msgs.push("不在已知品項詞彙表內");
+      if (bf.item_uncertain.includes("neighbor")) msgs.push("與前後番品項不同");
+      inp.title = "品項可疑 (" + msgs.join("、") + "),請人工確認是否誤讀 (例如讀到鄰欄數字)";
     }
   };
 
@@ -591,11 +638,11 @@ function buildBandList(){
   analysisData.rows.forEach((r, k) => {
     const item = document.createElement("div");
     item.className = "band-item";
-    const cnt = collectedBands[k] || 0;
+    const collected = !!collectedBands[k];
     const ck = document.createElement("span");
     ck.className = "ck";
-    ck.textContent = cnt ? "✓" : "";
-    if (cnt) item.classList.add("collected");
+    ck.textContent = collected ? "✓" : "";
+    if (collected) item.classList.add("collected");
     if (k === currentBand) item.classList.add("on");
     item.appendChild(ck);
     const num = document.createElement("span");
@@ -607,11 +654,6 @@ function buildBandList(){
       const b = document.createElement("span");
       b.className = "band-empty-badge";
       b.textContent = "空";
-      item.appendChild(b);
-    } else if (cnt > 1){
-      const b = document.createElement("span");
-      b.className = "cnt-badge";
-      b.textContent = "×" + cnt;
       item.appendChild(b);
     }
     item.onclick = () => selectBand(k);
@@ -690,7 +732,14 @@ function selectBand(k){
   buildBandList();
   drawCanvas();
   buildStageForm();
+  updateAddBandButton();
   alignCanvasToBand(k);
+}
+
+function updateAddBandButton(){
+  const btn = $("btnAddBand");
+  const collected = currentBand !== null && !!collectedBands[currentBand];
+  btn.textContent = collected ? "更新集合 (Enter)" : "加入集合 (Enter)";
 }
 
 function syncBandListAndCanvas(){
@@ -733,7 +782,7 @@ async function collectBand(){
     shift: d.vals["時段"] || analysisData.shift || "",
     fields: row
   };
-  showLoading("加入集合...");
+  showLoading(collectedBands[currentBand] ? "更新集合..." : "加入集合...");
   try {
     const res = await fetch("/api/collection/band", {
       method: "POST",
@@ -742,12 +791,14 @@ async function collectBand(){
     });
     const out = await res.json();
     if (out.ok){
-      collectedBands[currentBand] = (collectedBands[currentBand] || 0) + 1;
+      collectedBands[currentBand] = 1;
       collectionCount = out.count;
       bandData[currentBand].vals["序"] = "";   // 序號由用戶自行填寫
       updateCollInfo();
       syncBandListAndCanvas();
-      showMsg("已收集番" + (currentBand + 1) + " (集合共 " + collectionCount + " 列)", true);
+      updateAddBandButton();
+      const verb = out.updated ? "已更新" : "已收集";
+      showMsg(verb + "番" + (currentBand + 1) + " (集合共 " + collectionCount + " 列)", true);
       const next = (analysisData.rows || []).findIndex((_, idx) => idx > currentBand && !(collectedBands[idx] || 0));
       if (next >= 0) selectBand(next);
     } else {
@@ -805,6 +856,20 @@ function resetBand(){
   showMsg("番" + (currentBand + 1) + " 已重置為 OCR 預填值", true);
 }
 
+async function syncCollectedBands(){
+  // 從伺服器集合同步「此頁已收集」狀態,避免離開頁面再回來時勾選狀態遺失
+  try {
+    const res = await fetch("/api/collection");
+    const coll = await res.json();
+    (coll.items || []).forEach(it => {
+      if (it.kind === "band" && it.pdf === pdfName && it.page === currentPage){
+        collectedBands[it.band] = 1;
+      }
+    });
+    collectionCount = coll.count || 0;
+  } catch (e) { /* 同步失敗不阻擋頁面載入 */ }
+}
+
 async function loadPage(page){
   currentPage = page;
   showLoading("OCR 辨識第 " + page + " 頁...");
@@ -816,6 +881,7 @@ async function loadPage(page){
     currentStage = 0;
     bandData = {};
     collectedBands = {};
+    await syncCollectedBands();
     pageTotalBands = (analysisData.rows || []).length;
     $("pageInfo").textContent = page + " / " + totalPages;
     $("btnPrev").disabled = page <= 1;

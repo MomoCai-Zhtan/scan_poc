@@ -404,3 +404,65 @@ C 欄號 (來自 OCR 標頭分析 + ink 分佈):
 - `_merge_fullest` 引入的全張合併可能選到較完整但誤讀的 read (如 molds[4] 合併格)
 
 **狀態**: 小型 OCR 管線完成並驗證; 待 commit + push。
+
+## 2026-08-06 — 跨番繼承 AutoFill 改善 (M13)
+
+**需求**: 「AutoFill to fields 有沒有改善空間 + 繼承數據問題」→ 淡墨欄 (轉速/溫度/階段) 掃描無墨, 任何 OCR 都讀不出; 但生產設定跨番次大多相同, 可從前一有值番次繼承, 減少人工重複輸入。
+
+### GT 繼承模式驗證 (115.07.29.csv)
+- 小型下午 8 番: 慢速 350 / 中速 500 / 高速 900 全相同; 溫度 60/80/80、階段 30/60/90 全相同
+- 中型上午 4 番: 慢/中速 320/530 相同, 高速 980→930→840 偶爾變化; 溫度/階段 100% 相同
+- 中型下午 4 番: 慢速 380→320 偶爾變化, 高速 860→930→980 偶爾變化; 溫度/階段 100% 相同
+
+### 繼承規則 (使用者確認)
+1. **慢/中/高速轉速** (speeds[1..3]) — 加料轉速**不繼承**
+2. **蒸養溫度1~3** (temps) — 跨番繼承
+3. **蒸養階段1~3** (stages) — 跨番繼承
+4. **品項** — 品項為空 **且模具編號非空**才繼承; 「序」忽略
+5. **入池時間** — 同蒸養池回填: 後番空白入池時間 = 同池前番的入池時間
+
+### 實作
+- `ocrx.py`: `INHERIT_FIELDS` 常數 + `inherit_fields(bands)` — 只填補空白不覆蓋; 繼承來源 = 最近有值番次 (含繼承值); 被繼承欄位記錄 `band['inherited'] = [(field, idx), ...]`; 入池時間用 `pool_times` 字典依同池回填
+- `analysis.py`: `page_analysis` 中型/小型分支皆包 `ocrx.inherit_fields(...)` 套用繼承
+- `index.html`: `inheritedFieldToCol()` (field/idx → CSV 欄名)、`initBand` 標記 `bandData.inherited`、`markOcr` 顯示橙色「繼承」徽標 (title="從上一番自動帶入,請確認")
+- **版面合理化** (使用者回饋「標籤與欄位段落過大」): 縮小 stage-card padding 14→10、field-row margin 10→6、標籤寬度 132→100、input padding 與字型縮小、section 間距 10→8、auto-info 縮小
+
+### 驗證
+- `test_inherit.py`: 單元測試 ALL PASS — 番1 慢/中/高速+溫度+階段+品項繼承, 加料不繼承, 模具空不繼承品項, 同池入池回填, inherited 標示正確
+- `verify_js_braces.py` / `verify_html.py` PASS (node --check OK)
+- `test_app_load.py`: app 載入 OK (14 routes)
+- JS linter 對 Jinja2 模板 (`{{ _ts }}`) 的報錯為誤報, 瀏覽器渲染無影響
+
+**狀態**: 繼承邏輯 + 前端標示 + 版面合理化完成; 待人工驗證 UI 顯示。
+
+### 2026-08-06 修正 — 品項繼承來源 (M13 補丁)
+
+**問題**: 使用者回饋「品項繼承有問題, 應該檢查前番 C2」→ 原 `prev['item']` 記錄「含繼承值」的品項, 造成**連鎖繼承**: 番1 繼承番0 後, 番2 又繼承番1 的繼承值 → 若番0 品項誤讀, 錯誤擴散到所有後續番次。
+
+**修正**: `inherit_fields` 的 `prev['item']` 只記錄「真實讀到的 C2 品項」(非繼承值) — 用 `('item', 0) not in inherited` 判斷, 繼承的品項不更新 prev, 避免連鎖擴散。
+
+**驗證**: `test_inherit.py` 新增情境 3/4:
+- 情境3: 番0=800, 番1 空(繼承800), 番2 空 → 番2 繼承番0 真實 C2 (800), 非番1 繼承值
+- 情境4: 番0=800, 番1 空(繼承800), 番2=700(真實), 番3 空 → 番3 繼承番2 真實值 (700), 非番0 的 800
+- ALL PASS ✅
+
+## 2026-08-06 — OCR 品項擷取修正 + UI 修復 (M14)
+
+**動機**: 使用者回報表單間距問題、番次列表版面需求、集合修正流程、生產數量連動、以及「品項辨識 C2 有時讀到 C3」。
+
+### UI 修復
+- `stage-card`/`form-section`/`field-row`/`field-cell` 間距歸零 bug 修正 — 先前壓縮版面(M13)誤把部分 margin/padding/gap 全設 0, 導致階段表單擁擠貼邊
+- `field-cell` 的 `label`/`input` 因巢狀在 `.field-row.grid-row` 容器內, 意外繼承 `.field-row label`(`flex:0 0 100px`)這條為橫向欄位設計的規則 — 在 `.field-cell` 的直向 flex 容器裡, `flex-basis` 變成強制 100px 高度, 標籤與欄位之間出現大片空白 → 加 `flex: none` 修正
+- 番次列表從畫布右側直欄改為畫布上方橫向捲動列, 釋放寬度給畫布/表單(45%/剩餘寬度)
+- 「加入集合」改為 upsert: 後端 `/api/collection/band` 依 `(pdf, page, band)` 覆蓋既有列而非永遠新增, 避免重複收集造成 CSV 重複列; 按鈕文字依已收集狀態動態顯示「加入集合」/「更新集合」
+- 「生產數量(支數)」加上 `autoCalc` 標記: 品項/轉位變動時只覆蓋「仍是公式自動帶入」的值, 不覆蓋使用者手動輸入過的值
+
+### OCR 品項擷取修正
+- `parse_mid_table()`(中型)與 `parse_small_band()`(小型 fallback)的品項欄位原本用固定 index 讀取, 遇到 OCR 表格欄位數量位移時會讀到鄰欄(如管模/數字)內容 → 改為依「管模」標籤位置錨定反推品項位置
+- 新增 `ocrx.flag_item_uncertain()`: 比對 `item_count.csv` 詞彙表 + 同頁鄰番一致性, 不符合時標記 `item_uncertain` 供前端顯示複核提示(黃底 + tooltip, 比照既有 `arrange_conflict` 樣式)
+- 評估中型雙讀(比照小型 `_merge_fullest`)移植 item 欄位: 因持續性 API 成本 vs 不保證的準確率增益, 決議不實作
+
+### 驗證
+- `test_inherit.py` / `test_export.py` / `test_flow.py` ALL PASS/IDENTICAL
+- `verify_html.py` / `verify_js_braces.py` PASS
+- `verify_baseline.py` 抖檢 1150729.pdf + 1150702.pdf: 無 crash, 殘留 item 誤差均為真實 OCR 誤讀(非欄位錯位), 且會被 `item_uncertain` 攔截
