@@ -413,6 +413,35 @@ def ocr_auto_fields(pdf_path, page_index, rows, arrange_boxes=None, mid_layout=N
         return {}
 
 
+def re_ocr_band(pdf_path, page_index, band_idx):
+    """Re-OCR a single band (medium or small form). Returns updated band dict.
+
+    Uses the same band-with-header crop strategy as _retry_missing_bands for
+    medium forms, or per-band full-width crop for small forms. The result is
+    merged into the existing auto_fields by the caller.
+    """
+    try:
+        img = st.render_pages(pdf_path, 200)[page_index]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        hl, vl = find_lines_robust(gray)
+        ftype, rows = row_bands(hl)
+        if band_idx >= len(rows) or band_idx < 0:
+            return {}
+        y0, y1 = rows[band_idx]
+
+        if ftype == '中型':
+            md = ocrx.ocr_band_with_header(pdf_path, page_index, y0, y1)
+            if not md:
+                return {}
+            bands = ocrx.parse_mid_table(md)
+            return bands.get(0, {})
+        elif ftype == '小型':
+            return ocrx.ocr_small_band(pdf_path, page_index, y0, y1) or {}
+        return {}
+    except Exception:
+        return {}
+
+
 def page_analysis(pdf_path, page_index, ocr_arrange=True, ocr=True):
     img = st.render_pages(pdf_path, 200)[page_index]
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)

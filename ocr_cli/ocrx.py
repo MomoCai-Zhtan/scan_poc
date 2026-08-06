@@ -129,19 +129,27 @@ def ocr_band_with_header(pdf_path, page_index, y0, y1, x0=80, x1=1600,
     return md
 
 
-def _extract_c14c15(r1, col_idx):
-    """Extract sub-row values from a C14 or C15 cell.
+def ocr_band_with_header(pdf_path, page_index, y0, y1, x0=80, x1=1600,
+                         hdr_top=240, hdr_bottom=380):
+    """Composite crop: column header strip stacked above a single band row.
 
-    C14/C15 cells contain 3 sub-rows of handwritten digits, either as a single
-    digit (e.g. "60") or space-separated (e.g. "60 90 90" for 3 sub-rows).
-    Returns list of up to 3 digit strings.
+    Gives Mistral OCR the column-label context that makes per-band parsing
+    reliable (header labels sit at page top, so a naive y0-offset crop would
+    clip the previous band for any band past the first).
     """
-    import re
-    if col_idx >= len(r1):
-        return []
-    cell = r1[col_idx].strip()
-    nums = re.findall(r'\d+', cell)
-    return nums[:3]
+    pages = st.render_pages(pdf_path, 200)
+    img = pages[page_index]
+    hdr = img[max(0, hdr_top):hdr_bottom, x0:x1]
+    band = img[y0:min(y1, img.shape[0]), x0:x1]
+    gap = 10
+    H = hdr.shape[0] + band.shape[0] + gap
+    canvas = np.full((H, hdr.shape[1], 3), 255, np.uint8)
+    canvas[0:hdr.shape[0]] = hdr
+    canvas[hdr.shape[0] + gap: hdr.shape[0] + gap + band.shape[0]] = band
+    md = ocr_image(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
+    log.info('ocr_band %s p%d band_y=(%d,%d) -> %s', os.path.basename(pdf_path), page_index + 1,
+             y0, y1, 'ok' if md else 'FAIL')
+    return md
 
 
 def parse_mid_table(markdown):
@@ -151,8 +159,6 @@ def parse_mid_table(markdown):
                    'speeds': [...], 'speed_times': [...], 'steam_pool': str}
     per band index.
     """
-    import re
-
     lines = markdown.split('\n')
     table_lines = [l for l in lines if l.startswith('|')]
     if not table_lines:
@@ -287,13 +293,48 @@ def parse_mid_table(markdown):
             'speed_times': speed_times,
             'steam_pool': pool,
             'arrange': '',
-            'c14': _extract_c14c15(r1, 13),
-            'c15': _extract_c14c15(r1, 14),
+            'c14': [],
+            'c15': [],
         }
         band_idx += 1
         i += 2
 
+    if bands:
+        _validate_fans(bands)
+
     return bands
+
+
+def _validate_fans(bands):
+    """Validate 番次 sequence and clear obviously-wrong values.
+
+    Rules:
+    - fan must be integer 1-99
+    - if fan is 3+ digits (>=100), likely misread from neighboring speed/temp cell → clear
+    - consecutive fans should differ by at most 10; outlier → clear
+    """
+    keys = sorted(k for k in bands if isinstance(bands[k], dict))
+    prev_fan = 0
+    for k in keys:
+        b = bands[k]
+        fan = b.get('fan', '')
+        if not fan:
+            continue
+        try:
+            fv = int(fan)
+        except (TypeError, ValueError):
+            b['fan'] = ''
+            continue
+        if not (1 <= fv <= 99):
+            b['fan'] = ''
+            continue
+        if fv >= 100:
+            b['fan'] = ''
+            continue
+        if prev_fan and abs(fv - prev_fan) > 10:
+            b['fan'] = ''
+            continue
+        prev_fan = fv
 
 
 def _stack_cells(img, cells, scale=5, pad=24):

@@ -4,7 +4,6 @@ import csv
 import glob
 import logging
 import os
-import re
 import sys
 import json
 import uuid
@@ -18,6 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OCR = os.path.join(ROOT, 'ocr_cli')
 CSV_DIR = os.path.join(ROOT, 'csv')
 CACHE = os.path.join(ROOT, 'scan_entry', 'cache')
+CACHE_VERSION = 2
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'scan_entry.log')
 
@@ -91,13 +91,19 @@ def _page_cache_path(name, page):
 
 
 def _page_cache_load(cache_path, name, page):
-    """回傳已快取的頁面 OCR 快照;PDF 變動(mtime 不同)或損毀則回 None。"""
+    """回傳已快取的頁面 OCR 快照;PDF 變動(mtime 不同)、版本不符或損毀則回 None。"""
     try:
         with open(cache_path, encoding='utf-8') as f:
             data = json.load(f)
         pdf_path = os.path.join(ROOT, name)
-        if os.path.exists(pdf_path) and data.get('_meta', {}).get('pdf_mtime') == os.path.getmtime(pdf_path):
-            return data.get('result')
+        meta = data.get('_meta', {})
+        if not os.path.exists(pdf_path):
+            return None
+        if meta.get('pdf_mtime') != os.path.getmtime(pdf_path):
+            return None
+        if meta.get('version') != CACHE_VERSION:
+            return None
+        return data.get('result')
     except Exception:
         pass
     return None
@@ -107,7 +113,10 @@ def _page_cache_save(cache_path, name, page, result):
     try:
         os.makedirs(CACHE, exist_ok=True)
         payload = {
-            '_meta': {'pdf_mtime': os.path.getmtime(os.path.join(ROOT, name))},
+            '_meta': {
+                'version': CACHE_VERSION,
+                'pdf_mtime': os.path.getmtime(os.path.join(ROOT, name)),
+            },
             'result': result,
         }
         with open(cache_path, 'w', encoding='utf-8') as f:
@@ -159,7 +168,7 @@ def api_pdf(name):
 
 @app.route('/api/pdf/<path:name>/<int:page>')
 def api_pdf_page(name, page):
-    """Single page analysis with OCR. Returns one page with auto_fields.
+    """Single page analysis. With OCR by default; add ?structure_only=1 to skip OCR.
     結果以 PDF 為 key 快照至磁碟,換頁/重整不再重複 OCR。"""
     path = get_pdf(name)
     if not path:
@@ -169,12 +178,14 @@ def api_pdf_page(name, page):
     if page < 1 or page > len(pages):
         logger.warning('api_pdf_page invalid page: %s page=%d (total=%d)', name, page, len(pages))
         return flask.jsonify({'error': 'invalid page'}), 404
+    structure_only = flask.request.args.get('structure_only') == '1'
     cache_path = _page_cache_path(name, page)
     result = _page_cache_load(cache_path, name, page)
-    if result is None:
-        logger.info('api_pdf_page OCR: %s page=%d', name, page)
+    if result is None or structure_only:
+        logger.info('api_pdf_page %s: %s page=%d', 'structure' if structure_only else 'OCR', name, page)
         result = _page_analysis_with_date(path, name, page)
-        _page_cache_save(cache_path, name, page, result)
+        if not structure_only:
+            _page_cache_save(cache_path, name, page, result)
     else:
         logger.info('api_pdf_page cache hit: %s page=%d', name, page)
     return flask.jsonify(result)
@@ -195,6 +206,28 @@ def api_pdf_page_ocr(name, page):
     result = _page_analysis_with_date(path, name, page)
     _page_cache_save(_page_cache_path(name, page), name, page, result)
     return flask.jsonify(result)
+
+
+@app.route('/api/pdf/<path:name>/<int:page>/band/<int:band>/ocr', methods=['POST'])
+def api_band_ocr(name, page, band):
+    """Re-OCR a single band (for sparse-ink retry or user-initiated correction).
+    Updates the cached page snapshot and returns the new band dict."""
+    path = get_pdf(name)
+    if not path:
+        logger.warning('api_band_ocr not found: %s page=%d band=%d', name, page, band)
+        return flask.jsonify({'error': 'not found'}), 404
+    pages = st.render_pages(path, 200)
+    if page < 1 or page > len(pages):
+        logger.warning('api_band_ocr invalid page: %s page=%d band=%d', name, page, band)
+        return flask.jsonify({'error': 'invalid page'}), 404
+    logger.info('api_band_ocr: %s page=%d band=%d', name, page, band)
+    band_data = analysis.re_ocr_band(path, page - 1, band)
+    cache_path = _page_cache_path(name, page)
+    cached = _page_cache_load(cache_path, name, page)
+    if cached and band_data:
+        cached.setdefault('auto_fields', {})[band] = band_data
+        _page_cache_save(cache_path, name, page, cached)
+    return flask.jsonify({'ok': True, 'band': band, 'fields': band_data})
 
 
 @app.route('/api/collection', methods=['GET'])

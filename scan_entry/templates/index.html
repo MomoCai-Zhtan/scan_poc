@@ -149,7 +149,7 @@
         <div class="canvas-wrap">
           <div class="canvas-toolbar">
             <span class="toolbar-drag" title="拖曳移動">⠿</span>
-            <label><input type="checkbox" id="gridToggle" checked> 顯示格線</label>
+            <label><input type="checkbox" id="gridToggle" checked> 顯示欄位編號</label>
             <button id="btnReOcr" class="toolbar-btn" title="強制重新 OCR 目前頁並更新快照">重新 OCR</button>
           </div>
           <canvas id="scanCanvas"></canvas>
@@ -165,10 +165,11 @@
           <button id="btnStageNext" class="nav-btn">下一步</button>
         </div>
         <div id="stageForm"></div>
-        <div class="form-actions">
-          <button id="btnAddBand" class="primary">加入集合 (Enter)</button>
-          <button id="btnResetBand">重置此番</button>
-        </div>
+         <div class="form-actions">
+           <button id="btnAddBand" class="primary">加入集合 (Enter)</button>
+           <button id="btnResetBand">重置此番</button>
+           <button id="btnReOcrBand" class="nav-btn">重新辨識此番</button>
+         </div>
         <div class="shortcut-hint">
           快捷鍵: Enter=下一步/收集 · 1/2/3=切階段 · ←/→=切換番次 · Esc=清除欄位
         </div>
@@ -238,6 +239,8 @@ let collectionCount = 0;      // 集合總列數 (server count)
 let pageTotalBands = 0;
 let showGrid = true;           // ToolBar: 顯示 C/R 格線覆疊
 const pageImages = {};
+let pageAborter = null;        // AbortController for in-flight page requests
+let pdfStructure = null;       // 全頁結構 (from /api/pdf/<name>), for progressive rendering
 
 function $(id){ return document.getElementById(id); }
 
@@ -264,6 +267,41 @@ function showLayout(show){
 }
 function showPageNav(show){
   $("pageNav").style.display = show ? "inline" : "none";
+}
+
+function renderPageStructure(page){
+  if (!pdfStructure || !pdfStructure.pages) return;
+  const p = pdfStructure.pages[page - 1];
+  if (!p) return;
+  analysisData = {
+    page: p.page || page,
+    type: p.type || '',
+    rows: p.rows || [],
+    shift: p.shift || '',
+    shift_conf: p.shift_conf || 0,
+    h_lines: p.h_lines || [],
+    v_lines: p.v_lines || [],
+    size: p.size || [],
+    date_iso: pdfStructure.date_iso || '',
+    date_roc: pdfStructure.date_roc || '',
+    date_disp: pdfStructure.date_disp || '',
+    auto_fields: null,
+  };
+  currentBand = null;
+  currentStage = 0;
+  bandData = {};
+  collectedBands = {};
+  pageTotalBands = (analysisData.rows || []).length;
+  $("pageInfo").textContent = page + " / " + totalPages;
+  $("btnPrev").disabled = page <= 1;
+  $("btnNext").disabled = page >= totalPages;
+  $("dateInfo").textContent = "日期 " + (analysisData.date_disp || "");
+  showLayout(true);
+  buildBandList();
+  buildStageForm();
+  computePositions();
+  updateCollInfo();
+  loadCanvasImage();
 }
 
 function bandInfo(k){
@@ -446,6 +484,9 @@ function buildStageForm(){
     wrap.innerHTML = '<div class="hint">請點擊左側番次 (或畫布) 開始逐番審查</div>';
     updateProgress();
     return;
+  }
+  if (!bandData[currentBand]) {
+    initBand(currentBand);
   }
   recomputeDerived(currentBand);
   const stage = STAGES[currentStage];
@@ -856,6 +897,33 @@ function resetBand(){
   showMsg("番" + (currentBand + 1) + " 已重置為 OCR 預填值", true);
 }
 
+async function reOcrBand(){
+  if (currentBand === null || !pdfName) return;
+  showLoading("重新辨識第 " + (currentBand + 1) + " 番...");
+  try {
+    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + currentPage +
+                            "/band/" + currentBand + "/ocr", {method: "POST"});
+    const out = await res.json();
+    if (out.ok && out.fields){
+      if (analysisData.auto_fields){
+        analysisData.auto_fields[currentBand] = out.fields;
+      }
+      delete bandData[currentBand];
+      initBand(currentBand);
+      recomputeDerived(currentBand);
+      buildStageForm();
+      updateCollInfo();
+      showMsg("番" + (currentBand + 1) + " 重新辨識完成", true);
+    } else {
+      showMsg("重新辨識失敗: " + (out.error || "無結果"), false);
+    }
+  } catch (e) {
+    showMsg("重新辨識失敗: " + e.message, false);
+  } finally {
+    hideLoading();
+  }
+}
+
 async function syncCollectedBands(){
   // 從伺服器集合同步「此頁已收集」狀態,避免離開頁面再回來時勾選狀態遺失
   try {
@@ -871,30 +939,32 @@ async function syncCollectedBands(){
 }
 
 async function loadPage(page){
+  if (pageAborter) pageAborter.abort();
+  pageAborter = new AbortController();
+  const signal = pageAborter.signal;
   currentPage = page;
+
+  renderPageStructure(page);
+
   showLoading("OCR 辨識第 " + page + " 頁...");
   try {
-    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + page);
+    const res = await fetch("/api/pdf/" + encodeURIComponent(pdfName) + "/" + page, {signal});
     if (!res.ok){ showMsg("無法載入第 " + page + " 頁", false); return; }
-    analysisData = await res.json();
-    currentBand = null;
-    currentStage = 0;
+    const data = await res.json();
+    if (data.auto_fields){
+      analysisData.auto_fields = data.auto_fields;
+    }
     bandData = {};
     collectedBands = {};
     await syncCollectedBands();
-    pageTotalBands = (analysisData.rows || []).length;
-    $("pageInfo").textContent = page + " / " + totalPages;
-    $("btnPrev").disabled = page <= 1;
-    $("btnNext").disabled = page >= totalPages;
-    $("dateInfo").textContent = "日期 " + (analysisData.date_disp || "");
-    showLayout(true);
     buildBandList();
     buildStageForm();
     computePositions();
     updateCollInfo();
-    loadCanvasImage();
-    showMsg("第 " + page + " 頁載入完成 (" + pageTotalBands + " 番)", true);
+    drawCanvas();
+    showMsg("第 " + page + " 頁 OCR 辨識完成 (" + pageTotalBands + " 番)", true);
   } catch (e) {
+    if (e.name === 'AbortError') return;
     showMsg("載入失敗: " + e.message, false);
   } finally {
     hideLoading();
@@ -930,12 +1000,14 @@ async function openPdf(name){
   try {
     const res = await fetch("/api/pdf/" + encodeURIComponent(name));
     if (!res.ok){ showMsg("無法分析 " + name, false); return; }
-    const data = await res.json();
-    totalPages = data.pages.length;
+    pdfStructure = await res.json();
+    totalPages = pdfStructure.pages.length;
     showPageNav(true);
-    $("dateInfo").textContent = "日期 " + (data.date_disp || "");
-    await loadPage(currentPage);
-    showMsg("載入完成 (共 " + totalPages + " 頁)", true);
+    $("dateInfo").textContent = "日期 " + (pdfStructure.date_disp || "");
+    renderPageStructure(currentPage);
+    showMsg("載入結構完成 (共 " + totalPages + " 頁)，OCR 背景辨識中...", true);
+    hideLoading();
+    loadPage(currentPage);
   } catch (e) {
     showMsg("載入失敗: " + e.message, false);
   } finally {
@@ -981,6 +1053,7 @@ function loadPdfs(){
   $("btnExport").onclick = exportCollection;
   $("btnAddBand").onclick = collectBand;
   $("btnResetBand").onclick = resetBand;
+  $("btnReOcrBand").onclick = reOcrBand;
   $("btnStagePrev").onclick = prevStage;
   $("btnStageNext").onclick = nextStage;
   $("gridToggle").onchange = (ev) => { showGrid = ev.target.checked; drawCanvas(); };
