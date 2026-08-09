@@ -20,6 +20,7 @@ CACHE = os.path.join(ROOT, 'scan_entry', 'cache')
 CACHE_VERSION = 2
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'scan_entry.log')
+DB_PATH = os.path.join(ROOT, 'scan_entry', 'data', 'collections.db')
 
 sys.path.insert(0, OCR)
 import analysis
@@ -68,10 +69,98 @@ HEADER = ["日期", "類型", "番數", "序", "品項", "時段", "生產數量
           "加料時間", "慢速時間", "中速時間", "高速時間",
           "蒸養池", "入池時間", "蒸養溫度1", "蒸養溫度2", "蒸養溫度3",
           "蒸養階段1", "蒸養階段2", "蒸養階段3", "位置",
-          "排列1", "排列2", "排列3", "排列4", "排列5", "排列6"]
+           "排列1", "排列2", "排列3", "排列4", "排列5", "排列6"]
 
-# In-memory collection: {session_id: [page_data, ...]}
+# SQLite-backed collection persistence
+import sqlite3
+
+def _db_init():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS collections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sid TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'band',
+            pdf TEXT,
+            page INTEGER,
+            band INTEGER,
+            date_iso TEXT,
+            date_roc TEXT,
+            date_disp TEXT,
+            type TEXT,
+            shift TEXT,
+            fields TEXT,
+            rows TEXT,
+            added_at TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(sid, kind, pdf, page, band)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sid ON collections(sid)")
+    conn.commit()
+    return conn
+
+_db_conn = _db_init()
+
+# In-memory cache for fast reads (session_id -> [items])
 COLLECTIONS = {}
+
+def _db_get_collection(sid):
+    """Load collection from SQLite into memory cache."""
+    cur = _db_conn.execute("SELECT kind, pdf, page, band, date_iso, date_roc, date_disp, type, shift, fields, rows, added_at FROM collections WHERE sid = ?", (sid,))
+    items = []
+    for row in cur.fetchall():
+        kind, pdf, page, band, date_iso, date_roc, date_disp, type_, shift, fields, rows, added_at = row
+        item = {'kind': kind, 'pdf': pdf, 'page': page, 'added_at': added_at}
+        if kind == 'band':
+            item['band'] = band
+            item['date_iso'] = date_iso
+            item['date_roc'] = date_roc
+            item['date_disp'] = date_disp
+            item['type'] = type_
+            item['shift'] = shift
+            item['fields'] = json.loads(fields) if fields else {}
+        else:
+            item['date_iso'] = date_iso
+            item['date_roc'] = date_roc
+            item['date_disp'] = date_disp
+            item['type'] = type_
+            item['rows'] = json.loads(rows) if rows else []
+        items.append(item)
+    return items
+
+def _db_upsert_item(sid, item):
+    """Insert or update a collection item in SQLite."""
+    kind = item.get('kind', 'band')
+    pdf = item.get('pdf')
+    page = item.get('page')
+    band = item.get('band') if kind == 'band' else None
+    date_iso = item.get('date_iso', '')
+    date_roc = item.get('date_roc', '')
+    date_disp = item.get('date_disp', '')
+    type_ = item.get('type', '')
+    shift = item.get('shift', '')
+    fields = json.dumps(item.get('fields', {}), ensure_ascii=False)
+    rows = json.dumps(item.get('rows', []), ensure_ascii=False)
+    added_at = item.get('added_at', datetime.now().isoformat())
+    _db_conn.execute("""
+        INSERT INTO collections (sid, kind, pdf, page, band, date_iso, date_roc, date_disp, type, shift, fields, rows, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(sid, kind, pdf, page, band) DO UPDATE SET
+            fields=excluded.fields, rows=excluded.rows, updated_at=CURRENT_TIMESTAMP
+    """, (sid, kind, pdf, page, band, date_iso, date_roc, date_disp, type_, shift, fields, rows, added_at))
+    _db_conn.commit()
+
+def _db_delete_collection(sid):
+    """Delete all items for a session."""
+    _db_conn.execute("DELETE FROM collections WHERE sid = ?", (sid,))
+    _db_conn.commit()
+
+def _db_count(sid):
+    """Count items for a session."""
+    cur = _db_conn.execute("SELECT COUNT(*) FROM collections WHERE sid = ?", (sid,))
+    return cur.fetchone()[0]
 
 
 def list_pdfs():
@@ -235,6 +324,8 @@ def get_collection():
     """Get current session's collection."""
     sid = flask.session.get('sid') or str(uuid.uuid4())
     flask.session['sid'] = sid
+    if sid not in COLLECTIONS:
+        COLLECTIONS[sid] = _db_get_collection(sid)
     coll = COLLECTIONS.get(sid, [])
     logger.info('collection GET sid=%s count=%d', sid[:8], len(coll))
     return flask.jsonify({'items': coll, 'count': len(coll)})
@@ -256,9 +347,11 @@ def add_to_collection():
         'rows': data.get('rows', []),
         'added_at': datetime.now().isoformat(),
     }
+    _db_upsert_item(sid, page_data)
     if sid not in COLLECTIONS:
-        COLLECTIONS[sid] = []
-    COLLECTIONS[sid].append(page_data)
+        COLLECTIONS[sid] = _db_get_collection(sid)
+    else:
+        COLLECTIONS[sid] = _db_get_collection(sid)
     logger.info('collection POST sid=%s page=%d rows=%d total=%d', sid[:8], page_data.get('page', 0), len(page_data.get('rows', [])), len(COLLECTIONS[sid]))
     return flask.jsonify({'ok': True, 'count': len(COLLECTIONS[sid])})
 
@@ -282,17 +375,16 @@ def add_band_to_collection():
         'fields': data.get('fields', {}),
         'added_at': datetime.now().isoformat(),
     }
+    _db_upsert_item(sid, item)
     if sid not in COLLECTIONS:
-        COLLECTIONS[sid] = []
+        COLLECTIONS[sid] = _db_get_collection(sid)
+    else:
+        COLLECTIONS[sid] = _db_get_collection(sid)
     coll = COLLECTIONS[sid]
     existing = next((i for i, it in enumerate(coll) if it.get('kind') == 'band'
                       and it.get('pdf') == item['pdf'] and it.get('page') == item['page']
                       and it.get('band') == item['band']), None)
     updated = existing is not None
-    if updated:
-        coll[existing] = item
-    else:
-        coll.append(item)
     logger.info('collection band POST sid=%s pdf=%s page=%d band=%s %s total=%d',
                 sid[:8], item['pdf'], item['page'], item['band'],
                 'updated' if updated else 'added', len(coll))
@@ -303,8 +395,10 @@ def add_band_to_collection():
 def clear_collection():
     """Clear collection."""
     sid = flask.session.get('sid')
-    if sid and sid in COLLECTIONS:
-        del COLLECTIONS[sid]
+    if sid:
+        _db_delete_collection(sid)
+        if sid in COLLECTIONS:
+            del COLLECTIONS[sid]
         logger.info('collection DELETE sid=%s', sid[:8])
     else:
         logger.warning('collection DELETE no session')

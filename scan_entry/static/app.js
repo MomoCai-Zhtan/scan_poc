@@ -56,8 +56,17 @@ let showGrid = true;           // ToolBar: 顯示 C/R 格線覆疊
 const pageImages = {};
 let pageAborter = null;        // AbortController for in-flight page requests
 let pdfStructure = null;       // 全頁結構 (from /api/pdf/<name>), for progressive rendering
+let _debounceTimer = null;     // debounce timer for recomputeDerived/computePositions
 
 function $(id){ return document.getElementById(id); }
+
+function debounce(fn, ms){
+  let t;
+  return function(...args){
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
 
 function showMsg(text, ok){
   const m = $("msg");
@@ -354,13 +363,19 @@ function buildStageForm(){
         if (d2.autoCalc) d2.autoCalc[col] = false;   // 人工手動改過,之後品項/轉位變動不再覆蓋
       }
       if (col === "品項" || col.startsWith("轉位")){
-        recomputeDerived(currentBand);
-        syncFieldDom("生產數量(支數)");
-        if (currentStage === 2) buildStageForm();
+        clearTimeout(_debounceTimer);
+        _debounceTimer = setTimeout(() => {
+          recomputeDerived(currentBand);
+          syncFieldDom("生產數量(支數)");
+          if (currentStage === 2) buildStageForm();
+        }, 100);
       }
       if (col === "蒸養池"){
-        computePositions();
-        syncFieldDom("位置");
+        clearTimeout(_debounceTimer);
+        _debounceTimer = setTimeout(() => {
+          computePositions();
+          syncFieldDom("位置");
+        }, 100);
       }
       const badge = inp.parentNode.querySelector(".ocr-badge");
       if (badge) badge.remove();

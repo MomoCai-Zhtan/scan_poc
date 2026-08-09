@@ -6,3 +6,4 @@ scan_entry/logs/
 ocr_cli/tessdata/
 debug/
 *.pdf
+scan_entry/data/
