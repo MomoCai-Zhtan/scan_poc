@@ -509,3 +509,20 @@ C 甈? (靘 OCR 璅?? + ink ??):
 
 ### 待處理
 - .github/workflows/ci.yml 因 token 缺少 workflow scope 未能 push，需手動在 GitHub web UI 建立 workflow
+
+## 2026-08-09 — 前端單元測試 (M18)
+
+### Vitest + happy-dom 單元測試
+- package.json: 初始化 npm 專案, 安裝 vitest + happy-dom
+- itest.config.js: 設定 happy-dom environment
+- scan_entry/tests/app.test.js: 27 個測試涵蓋:
+  - mapField: 品項/轉位/離心/轉速/蒸養/排列映射
+  - inheritedFieldToCol: 繼承欄位對應
+  - rrangeSource: 中型3模具特判 + 小型直接映射
+  - ecomputeDerived: 生產數量自動計算 + 排列 fallback
+  - andIsEmpty: 空 band 判定
+- 測試結果: 27 passed, 6ms
+
+### 待處理
+- CI workflow 已推送, 需設定 MISTRAL_API_KEY secret
+- 未來可將 app.js 重構為模組, 直接測試原始函數而非複製品

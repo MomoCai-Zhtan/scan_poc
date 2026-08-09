@@ -7,3 +7,4 @@ ocr_cli/tessdata/
 debug/
 *.pdf
 scan_entry/data/
+node_modules/
