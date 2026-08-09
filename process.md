@@ -485,3 +485,27 @@ C 甈? (靘 OCR 璅?? + ink ??):
 
 ### 評估摘要
 - ocr_eval_report.md: OCR-only vs LLM 混合方案評估, 結論為維持純 OCR 方案
+
+## 2026-08-09 — 前端模組化與漸進式渲染 (M16)
+
+### 前端模組化
+- scan_entry/static/style.css: 從 index.html 抽取所有 CSS
+- scan_entry/static/app.js: 從 index.html 抽取所有 JS
+- scan_entry/templates/index.html: 改為只保留 HTML 結構 + cache-buster inline script
+- scan_entry/app.py: Flask 加入 static_folder='static' 提供 /static/ 路徑
+- scan_entry/verify_html.py: 改為驗證 index.html + style.css + app.js 組合結構
+
+### 漸進式渲染
+- 新增 pdfStructure 全域變數儲存全頁結構
+- 新增 enderPageStructure(page): 用結構資料即時渲染畫布+番次列表+空表單
+- openPdf() 改為: 結構載入完成 → 立即渲染 → 背景 OCR
+- loadPage() 改為: 先渲染結構 → 再 fetch OCR → 收到後合併 auto_fields
+- pageAborter AbortController 防止快速翻頁狀態覆蓋
+- uildStageForm() 加入 initBand 守衛避免 race condition
+
+### 變更統計
+- 5 files changed, 1103 insertions(+), 1084 deletions(-)
+- commit: 5b5be3c
+
+### 待處理
+- .github/workflows/ci.yml 因 token 缺少 workflow scope 未能 push，需手動在 GitHub web UI 建立 workflow
