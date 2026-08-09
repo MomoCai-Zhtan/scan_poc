@@ -133,5 +133,14 @@ def run():
     print('情境3 番2 item (連鎖繼承來源=番0 真實C2):', r3[2]['item'])
     print('情境4 番3 item (繼承番2 真實值, 非番0):', r4[3]['item'])
 
+    # 情境5: OCR normalize — 4W → 400, VV → 00, S → 5
+    assert ocrx._normalize_ocr_text('4W') == '400'
+    assert ocrx._normalize_ocr_text('VV') == '00'
+    assert ocrx._normalize_ocr_text('S00') == '500'
+    assert ocrx._normalize_ocr_text('B8') == '88'
+    assert ocrx._normalize_ocr_text('G6') == '66'
+    assert ocrx._normalize_ocr_text('正常123') == '正常123'  # 非純數字不處理
+    print('OCR normalize: 4W->400, VV->00, S00->500, B8->88, G6->66')
+
 if __name__ == '__main__':
     run()

@@ -43,6 +43,58 @@ OCR_API_KEY = _cfg.get('MISTRAL_API_KEY', '')
 OCR_MODEL = _cfg.get('MISTRAL_MODEL', 'mistral-ocr-latest')
 OCR_API_URL = _cfg.get('MISTRAL_API_URL', 'https://api.mistral.ai/v1/ocr')
 
+# Handwritten digit OCR common misreadings
+_OCR_CORRECTIONS = {
+    'W': '00',   # cursive 00 → W
+    'VV': '00',  # cursive 00 → VV
+    'vv': '00',  # cursive 00 → vv
+    'I': '1',    # capital I → 1
+    'l': '1',    # lowercase l → 1
+    'O': '0',    # capital O → 0
+    'S': '5',    # cursive 5 → S
+    'B': '8',    # cursive 8 → B
+    'G': '6',    # cursive 6 → G
+}
+
+def _normalize_ocr_text(text):
+    """Fix common handwritten-digit OCR misreadings.
+    Only applies corrections when the result is still a valid digit string.
+    """
+    if not text or not isinstance(text, str):
+        return text
+    original = text
+    for wrong, right in _OCR_CORRECTIONS.items():
+        if len(wrong) > 1:
+            text = text.replace(wrong, right)
+    if any(c in _OCR_CORRECTIONS for c in text):
+        text = ''.join(_OCR_CORRECTIONS.get(c, c) for c in text)
+    if text and not re.fullmatch(r'\d*', text):
+        return original
+    if text != original:
+        log.info('OCR normalize: %r -> %r', original, text)
+    return text
+
+
+def _normalize_band(b):
+    """Apply OCR misreading corrections to all string fields in a band dict."""
+    if not isinstance(b, dict):
+        return b
+    for key in ('fan', 'item', 'steam_pool'):
+        if key in b and isinstance(b[key], str):
+            b[key] = _normalize_ocr_text(b[key])
+    for key in ('molds', 'speeds', 'speed_times'):
+        if key in b and isinstance(b[key], list):
+            b[key] = [_normalize_ocr_text(v) for v in b[key]]
+    if 'centrifuge' in b and isinstance(b['centrifuge'], (list, tuple)):
+        b['centrifuge'] = tuple(_normalize_ocr_text(v) for v in b['centrifuge'])
+    if 'temps' in b and isinstance(b['temps'], list):
+        b['temps'] = [_normalize_ocr_text(v) for v in b['temps']]
+    if 'stages' in b and isinstance(b['stages'], list):
+        b['stages'] = [_normalize_ocr_text(v) for v in b['stages']]
+    if 'pool_time' in b and isinstance(b['pool_time'], str):
+        b['pool_time'] = _normalize_ocr_text(b['pool_time'])
+    return b
+
 
 def ocr_image(bgr):
     """Send an in-memory BGR image to Mistral OCR. Returns markdown string."""
@@ -301,6 +353,17 @@ def parse_mid_table(markdown):
 
     if bands:
         _validate_fans(bands)
+        for b in bands.values():
+            if not isinstance(b, dict):
+                continue
+            for key in ('fan', 'item', 'steam_pool'):
+                if key in b and isinstance(b[key], str):
+                    b[key] = _normalize_ocr_text(b[key])
+            for key in ('molds', 'speeds', 'speed_times'):
+                if key in b and isinstance(b[key], list):
+                    b[key] = [_normalize_ocr_text(v) for v in b[key]]
+            if 'centrifuge' in b and isinstance(b['centrifuge'], (list, tuple)):
+                b['centrifuge'] = tuple(_normalize_ocr_text(v) for v in b['centrifuge'])
 
     return bands
 
@@ -706,7 +769,7 @@ def _parse_small_rows(r1, r2, r3):
     for i, row in ((0, r1), (1, r2), (2, r3)):
         b['temps'][i] = _valid_range(_dig(_small_cell(row, 21)), 1, 150)
         b['stages'][i] = _valid_range(_dig(_small_cell(row, 22)), 1, 150)
-    return b
+    return _normalize_band(b)
 
 
 def parse_small_band(row1, row2, row3):
@@ -789,7 +852,7 @@ def parse_small_band(row1, row2, row3):
             b['temps'][ri] = _valid_range(_dig(digit_cells[-2]), 1, 150)
             b['stages'][ri] = _valid_range(_dig(digit_cells[-1]), 1, 150)
 
-    return b
+    return _normalize_band(b)
 
 
 def _md_data_rows(md):
