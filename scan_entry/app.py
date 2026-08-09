@@ -25,7 +25,7 @@ sys.path.insert(0, OCR)
 import analysis
 import structure as st
 
-app = flask.Flask(__name__)
+app = flask.Flask(__name__, static_folder='static', static_url_path='/static')
 app.secret_key = os.environ.get('FLASK_SECRET', 'scan-entry-secret-2026')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['TEMPLATES_AUTO_RELOAD'] = True
