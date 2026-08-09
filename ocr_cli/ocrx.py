@@ -622,6 +622,18 @@ def inherit_fields(bands):
             continue
         inherited = []
 
+        # --- ensure list fields exist so missing keys can still inherit ---
+        _list_defaults = {
+            'molds': [''] * 6,
+            'speeds': [''] * 4,
+            'speed_times': [''] * 4,
+            'temps': [''] * 3,
+            'stages': [''] * 3,
+        }
+        for field, default in _list_defaults.items():
+            if field not in b or not isinstance(b.get(field), (list, tuple)):
+                b[field] = list(default)
+
         # --- 列表欄位繼承 (speeds[1..3] / temps / stages) ---
         for field, idxs in INHERIT_FIELDS.items():
             if field == 'item':
