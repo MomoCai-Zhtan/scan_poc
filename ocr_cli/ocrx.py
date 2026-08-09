@@ -528,7 +528,7 @@ def flag_item_uncertain(bands):
 # stages[0..2] = 蒸養階段1~3
 # item         = 品項 (純字串, 從上一番; 使用者明示「序」忽略)
 INHERIT_FIELDS = {
-    'speeds': [1, 2, 3],
+    'speeds': [0, 1, 2, 3],
     'temps': [0, 1, 2],
     'stages': [0, 1, 2],
     'item': None,   # None = 純字串欄位, 整欄繼承
@@ -583,9 +583,15 @@ def inherit_fields(bands):
 
         # --- 入池時間同池回填: 後番空白入池時間 = 同池前番的入池時間 ---
         pool = b.get('steam_pool')
-        if pool and not b.get('pool_time') and pool in pool_times:
-            b['pool_time'] = pool_times[pool]
-            inherited.append(('pool_time', 0))
+        if pool:
+            if not b.get('pool_time') and pool in pool_times:
+                b['pool_time'] = pool_times[pool]
+                inherited.append(('pool_time', 0))
+                log.info('pool_time backfill: band %d pool=%s pool_time=%s', bi, pool, pool_times[pool])
+            elif b.get('pool_time'):
+                log.info('pool_time skip (already set): band %d pool=%s pool_time=%s', bi, pool, b['pool_time'])
+            else:
+                log.info('pool_time no match: band %d pool=%s pool_times=%s', bi, pool, list(pool_times.keys()))
 
         if inherited:
             b['inherited'] = inherited
