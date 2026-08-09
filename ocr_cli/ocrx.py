@@ -529,6 +529,7 @@ def flag_item_uncertain(bands):
 # item         = 品項 (純字串, 從上一番; 使用者明示「序」忽略)
 INHERIT_FIELDS = {
     'speeds': [0, 1, 2, 3],
+    'speed_times': [0, 1, 2, 3],
     'temps': [0, 1, 2],
     'stages': [0, 1, 2],
     'item': None,   # None = 純字串欄位, 整欄繼承

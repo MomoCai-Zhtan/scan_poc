@@ -5,42 +5,47 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ocrx
 
 def run():
-    # 情境: 番0 完整, 番1 缺慢/中/高速+溫度+階段+品項+入池, 番2 全空(無模具)
+    # 情境: 番0 完整, 番1 缺慢/中/高速+時間+溫度+階段+品項+入池, 番2 全空(無模具)
     bands = {
         0: {'item': '800', 'molds': ['3', '4', '1'],
-            'speeds': ['280', '320', '530', '980'],
+            'speeds': ['280', '320', '530', '980'], 'speed_times': ['10', '20', '30', '40'],
             'temps': ['60', '90', '90'], 'stages': ['30', '60', '90'],
             'steam_pool': '4', 'pool_time': '0840'},
         1: {'item': '', 'molds': ['5', '6', '2'],
-            'speeds': ['280', '', '', ''], 'temps': ['', '', ''],
-            'stages': ['', '', ''], 'steam_pool': '2', 'pool_time': ''},
+            'speeds': ['280', '', '', ''], 'speed_times': ['10', '', '', ''],
+            'temps': ['', '', ''], 'stages': ['', '', ''],
+            'steam_pool': '2', 'pool_time': ''},
         2: {'item': '', 'molds': ['', '', ''],
-            'speeds': ['', '', '', ''], 'temps': ['', '', ''],
-            'stages': ['', '', ''], 'steam_pool': '2', 'pool_time': ''},
+            'speeds': ['', '', '', ''], 'speed_times': ['', '', '', ''],
+            'temps': ['', '', ''], 'stages': ['', '', ''],
+            'steam_pool': '2', 'pool_time': ''},
     }
     r = ocrx.inherit_fields(bands)
 
     ok = True
-    # 番1: 加料/慢/中/高速全繼承 (speeds[0] 本來就有值, 不標記繼承)
+    # 番1: 加料/慢/中/高速全繼承; 加料時間有值, 慢/中/高速時間繼承
     b1 = r[1]
     assert b1['speeds'] == ['280', '320', '530', '980'], b1['speeds']
+    assert b1['speed_times'] == ['10', '20', '30', '40'], b1['speed_times']
     assert b1['temps'] == ['60', '90', '90'], b1['temps']
     assert b1['stages'] == ['30', '60', '90'], b1['stages']
     # 品項繼承 (品項空 + 模具非空)
     assert b1['item'] == '800', b1['item']
     # 入池時間同池回填 (番1 池=2, 但番0 池=4 無 2 的入池 → 不繼承)
     assert b1['pool_time'] == '', b1['pool_time']
-    # 繼承標示: speeds[0] 本來有值不標記, 其餘 3 個空白被填入
+    # 繼承標示: speeds[0] 本來有值不標記, 其餘 3 個空白被填入; speed_times 空白被填入
     inh = b1.get('inherited', [])
     assert ('speeds', 1) in inh and ('speeds', 2) in inh and ('speeds', 3) in inh, inh
+    assert ('speed_times', 1) in inh and ('speed_times', 2) in inh and ('speed_times', 3) in inh, inh
     assert ('temps', 0) in inh and ('temps', 1) in inh and ('temps', 2) in inh, inh
     assert ('stages', 0) in inh and ('stages', 1) in inh and ('stages', 2) in inh, inh
     assert ('item', 0) in inh, inh
 
-    # 番2: 模具全空 → 品項不繼承; speeds 全空 → 4 個速度全繼承 (含加料)
+    # 番2: 模具全空 → 品項不繼承; speeds/speed_times 全空 → 全繼承
     b2 = r[2]
     assert b2['item'] == '', b2['item']   # 模具空 → 不繼承品項
-    assert b2['speeds'] == ['280', '320', '530', '980'], b2['speeds']  # 加料/慢/中/高速全繼承
+    assert b2['speeds'] == ['280', '320', '530', '980'], b2['speeds']
+    assert b2['speed_times'] == ['10', '20', '30', '40'], b2['speed_times']
     assert b2['temps'] == ['60', '90', '90'], b2['temps']
     assert b2['stages'] == ['30', '60', '90'], b2['stages']
     assert b2['pool_time'] == '', b2['pool_time']
