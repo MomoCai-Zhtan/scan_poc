@@ -1,11 +1,11 @@
 // Cache buster: reload if server restarted
-const TS = {{ _ts }};
-if (window._ts && window._ts !== TS) location.reload();
-window._ts = TS;
+// TS provided by inline script
+// cache buster handled by inline script
 
-const PDFS = {{ pdfs | tojson }};
-const HEADER = {{ header | tojson }};
-const ITEM_COUNT = {{ item_count | tojson }};
+
+// PDFS provided by inline script
+// HEADER provided by inline script
+// ITEM_COUNT provided by inline script
 
 // 審查階段欄位劃分 (逐番審查:三個階段依序顯示)
 const STAGES = [
