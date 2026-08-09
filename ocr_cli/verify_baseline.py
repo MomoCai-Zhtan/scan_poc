@@ -2,10 +2,13 @@
 """Baseline: compare hybrid OCR (page_analysis auto_fields) vs GT CSV for 中型/小型 pages.
 
 Usage:
-    python verify_baseline.py [--arrange] [pdf1.pdf pdf2.pdf ...]
-        --arrange   also OCR C13 circled digits / 排列 and compare vs GT 排列
-                    (default: core fields only — fewer API calls)
-        no pdf args → all 11507*.pdf with a matching GT CSV
+    python verify_baseline.py [--arrange] [--all] [--json] [--threshold N] [pdf1.pdf pdf2.pdf ...]
+        --arrange    also OCR C13 circled digits / 排列 and compare vs GT 排列
+                     (default: core fields only — fewer API calls)
+        --all        run all 11507*.pdf with matching GT CSV (ignores positional args)
+        --json       output JSON to stdout (for CI consumption)
+        --threshold  fail if accuracy < N% (default: 75)
+        no pdf args  → same as --all (backward compatible)
 
 Output: debug/baseline_<date>.md + console summary.
 """
@@ -278,8 +281,17 @@ def main():
     args = sys.argv[1:]
     do_arrange = '--arrange' in args
     perband = '--perband' in args
+    do_all = '--all' in args
+    do_json = '--json' in args
+    threshold = 75.0
+    if '--threshold' in args:
+        try:
+            ti = args.index('--threshold')
+            threshold = float(args[ti + 1])
+        except (IndexError, ValueError):
+            threshold = 75.0
     pdfs = [a for a in args if a.endswith('.pdf') and not a.startswith('--')]
-    if not pdfs:
+    if do_all or not pdfs:
         pdfs = sorted(f for f in os.listdir(ROOT)
                       if re.match(r'11507\d{2}\.pdf$', f)
                       and os.path.exists(os.path.join(CSV_DIR,
@@ -290,13 +302,15 @@ def main():
         verify_pdf(pdf, do_arrange, perband, summary)
 
     tot, ok = summary['tot'], summary['ok']
+    acc = 100.0 * ok / tot if tot else 0.0
     mode = ('每番' if perband else '整頁')
+    failed = acc < threshold
+
     lines = ['# 混合 OCR 基線 (%s%s)' % (mode, ' + 排列' if do_arrange else ''),
              '',
-             'PDF 數: %d | 比較欄位: %d | 正確: %d | 準確率: %.1f%%' % (
-                 len(pdfs), tot, ok, 100.0 * ok / tot if tot else 0.0),
+             'PDF 數: %d | 比較欄位: %d | 正確: %d | 準確率: %.1f%% | threshold: %.1f%%' % (
+                 len(pdfs), tot, ok, acc, threshold),
              '']
-    # error breakdown by field
     import collections
     err_cnt = collections.Counter()
     for e in summary['errs']:
@@ -324,12 +338,31 @@ def main():
     with io.open(rep, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
 
-    print('== 混合 OCR 基線 (含排列)' if do_arrange else '== 混合 OCR 基線 (核心欄位)')
-    print('模式: %s' % mode)
-    print('PDF=%d 欄位=%d 正確=%d 準確率=%.1f%%' % (len(pdfs), tot, ok, 100.0 * ok / tot if tot else 0.0))
-    for k in sorted(err_cnt):
-        print('  %s: %d' % (k, err_cnt[k]))
-    print('報告: %s' % rep)
+    if do_json:
+        out = {
+            'ok': ok,
+            'total': tot,
+            'accuracy': round(acc, 2),
+            'threshold': threshold,
+            'failed': failed,
+            'pdfs': len(pdfs),
+            'per_field': dict(err_cnt),
+            'errors': summary['errs'][:50],
+            'warnings': summary['warn'][:20],
+            'report': rep,
+        }
+        print(json.dumps(out, ensure_ascii=False))
+    else:
+        print('== 混合 OCR 基線 (含排列)' if do_arrange else '== 混合 OCR 基線 (核心欄位)')
+        print('模式: %s' % mode)
+        print('PDF=%d 欄位=%d 正確=%d 準確率=%.1f%% threshold=%.1f%%' % (
+            len(pdfs), tot, ok, acc, threshold))
+        for k in sorted(err_cnt):
+            print('  %s: %d' % (k, err_cnt[k]))
+        print('報告: %s' % rep)
+
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
