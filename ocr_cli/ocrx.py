@@ -613,6 +613,26 @@ def inherit_fields(bands):
         # --- 更新 pool_times: 記錄該池的入池時間 (含繼承值) ---
         if pool and b.get('pool_time'):
             pool_times[pool] = b['pool_time']
+
+    # --- 小型管/通用: 奇數番(1-indexed)=0-indexed偶數, 入池時間参照下一偶數番 ---
+    for bi in sorted(bands.keys()):
+        b = bands[bi]
+        if not isinstance(b, dict):
+            continue
+        if bi % 2 != 0:  # 0-indexed odd = 1-indexed even, skip
+            continue
+        pool = b.get('steam_pool')
+        if pool and not b.get('pool_time'):
+            for bj in range(bi + 1, len(bands)):
+                nb = bands.get(bj)
+                if not isinstance(nb, dict):
+                    continue
+                if nb.get('steam_pool') == pool and nb.get('pool_time'):
+                    b['pool_time'] = nb['pool_time']
+                    b.setdefault('inherited', []).append(('pool_time', 0))
+                    log.info('pool_time odd-band backfill: band %d pool=%s pool_time=%s from band %d', bi, pool, nb['pool_time'], bj)
+                    break
+
     return bands
 
 

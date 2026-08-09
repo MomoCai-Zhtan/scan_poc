@@ -58,6 +58,21 @@ def run():
     assert r2[1]['pool_time'] == '1513', r2[1]['pool_time']
     assert ('pool_time', 0) in r2[1].get('inherited', []), r2[1].get('inherited')
 
+    # 情境2b: 奇數番(1-indexed)=0-indexed偶數 入池空, 參照下一偶數番同池入池
+    # 番0 (0-indexed even) pool=2 pool_time='', 番1 (0-indexed odd) pool=2 pool_time='1513'
+    # → 番0 應從番1 回填入池時間
+    bands2b = {
+        0: {'item': '400', 'molds': ['1', '2', '3'],
+            'speeds': ['280', '350', '500', '900'], 'temps': ['60', '80', '80'],
+            'stages': ['30', '60', '90'], 'steam_pool': '2', 'pool_time': ''},
+        1: {'item': '400', 'molds': ['4', '5', '6'],
+            'speeds': ['280', '350', '500', '900'], 'temps': ['60', '80', '80'],
+            'stages': ['30', '60', '90'], 'steam_pool': '2', 'pool_time': '1513'},
+    }
+    r2b = ocrx.inherit_fields(bands2b)
+    assert r2b[0]['pool_time'] == '1513', r2b[0]['pool_time']
+    assert ('pool_time', 0) in r2b[0].get('inherited', []), r2b[0].get('inherited')
+
     # 情境3: 連鎖繼承不擴散 — 番0 品項誤讀, 番1 品項空(繼承番0), 番2 品項空
     # 番2 應繼承「真實讀到的 C2」= 番0 的誤讀值 (因番1 是繼承值, 不當來源)
     # 但若番0 誤讀, 番2 不應再擴散 — 驗證 prev['item'] 只記錄真實 C2
