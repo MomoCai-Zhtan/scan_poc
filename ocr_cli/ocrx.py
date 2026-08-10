@@ -742,12 +742,23 @@ def _first_non_empty_across_rows(rows, col_idx):
     return ''
 
 
+def _first_non_empty_item_across_rows(rows, col_idx):
+    """Return first non-empty normalized item value at col_idx across rows."""
+    for row in rows:
+        v = _small_cell(row, col_idx)
+        if v and v.strip():
+            return normalize_item(v)
+    return ''
+
+
 def _merge_rows_and_cols(rows):
     """Collapse rows/cols that are empty or duplicated due to Excel merged cells.
 
     Two merges are handled:
-    1. Column merge: an empty col that immediately follows a non-empty col is
-       collapsed into its left neighbour (Excel merged-cell gap).
+    1. Column merge: an empty col that immediately follows a non-empty col
+       containing a label (text with non-digit chars) is collapsed into its
+       left neighbour. Numeric-only columns are never collapsed, to avoid
+       destroying legitimately empty data columns.
     2. Row merge: consecutive rows with the same 番次 and 品項 are collapsed
        into one row, keeping the first non-empty value per column.
 
@@ -767,7 +778,9 @@ def _merge_rows_and_cols(rows):
     keep = [True] * ncols
     for j in range(1, ncols):
         if empty[j] and not empty[j - 1]:
-            keep[j] = False
+            left = padded[0][j - 1] if j - 1 < len(padded[0]) else ''
+            if re.search(r'[^\d\s]', left):
+                keep[j] = False
 
     merged = [[r[j] for j in range(ncols) if keep[j]] for r in padded]
 
@@ -874,8 +887,11 @@ def _parse_small_rows(r1, r2, r3):
 def parse_small_band(row1, row2, row3):
     """Parse one 小型 band from its 3 markdown sub-rows (R1/R2/R3).
 
-    Uses fixed 23-column layout when available, else falls back to the
-    anchor-based scan (locate 管模 label and walk columns).
+    Tries three parsers in order:
+    1. Fixed 23-column layout
+    2. Conservative merged-column layout
+    3. Content-based fallback (detects fields by value ranges)
+    Falls back to anchor-based scan (locate 管模 label and walk columns).
     Returns band dict (molds list len 6, speeds/times len 4, temps/stages len 3).
     """
     import re
@@ -883,6 +899,17 @@ def parse_small_band(row1, row2, row3):
         b = _parse_small_rows(row1, row2, row3)
         if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
             return b
+    merged = _merge_rows_and_cols([r for r in (row1, row2, row3) if r])
+    r1m = merged[0] if len(merged) >= 1 else (row1 or [])
+    r2m = merged[1] if len(merged) >= 2 else (row2 or [])
+    r3m = merged[2] if len(merged) >= 3 else (row3 or [])
+    if len(r1m) >= 14 and ('模' in _small_cell(r1m, 2) or '模' in _small_cell(r1m, 0)):
+        b = _parse_small_rows(r1m, r2m, r3m)
+        if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
+            return b
+    b = _parse_small_by_content(row1, row2, row3)
+    if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
+        return b
     b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
          'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
          'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
@@ -950,6 +977,81 @@ def parse_small_band(row1, row2, row3):
         if len(digit_cells) >= 2:
             b['temps'][ri] = _valid_range(_dig(digit_cells[-2]), 1, 150)
             b['stages'][ri] = _valid_range(_dig(digit_cells[-1]), 1, 150)
+
+    return _normalize_band(b)
+
+
+def _parse_small_by_content(r1, r2, r3):
+    """Content-based fallback parser for 小型 band when fixed-column fails.
+
+    Scans each row for values matching field patterns (speeds=100-1400,
+    speed_times=1-20, temps/stages=1-150, times=4-digit 600-2359) and
+    extracts fields from the matching columns.
+    """
+    b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
+         'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
+         'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
+         'arrange': [], 'c14': [], 'c15': []}
+    b['fan'] = _dig(_small_cell(r1, 0))
+    b['item'] = _first_non_empty_item_across_rows([r1, r2, r3], 1)
+
+    def _find_cols_by_range(row, lo, hi, count):
+        cols = []
+        for j, c in enumerate(row):
+            d = _dig(c)
+            if d and lo <= int(d) <= hi:
+                cols.append(j)
+                if len(cols) >= count:
+                    break
+        return cols
+
+    speed_cols = _find_cols_by_range(r1, 100, 1400, 4)
+    for k, col in enumerate(speed_cols[:4]):
+        b['speeds'][k] = _dig(_small_cell(r1, col))
+
+    if speed_cols:
+        base = speed_cols[0]
+        time_cols = [c for c in _find_cols_by_range(r2, 1, 20, 4) if c >= base][:4]
+        for k, col in enumerate(time_cols):
+            b['speed_times'][k] = _dig(_small_cell(r2, col))
+
+    pool_cell = _small_cell(r1, 13)
+    for row in (r1, r2, r3):
+        v = _small_cell(row, 13)
+        if v and re.search(r'\d', v):
+            pool_cell = v
+            break
+    nums = re.findall(r'\d+', pool_cell)
+    if nums:
+        if re.search(r'\d{4}', pool_cell):
+            m = re.search(r'\d{4}', pool_cell)
+            b['steam_pool'] = nums[0]
+            if _valid_range(m.group(0), 600, 2359):
+                b['pool_time'] = m.group(0)
+        elif len(nums) >= 3 and len(nums[1]) == 2 and len(nums[2]) == 2:
+            b['steam_pool'] = nums[0]
+            hhmm = nums[1] + nums[2]
+            if _valid_range(hhmm, 600, 2359):
+                b['pool_time'] = hhmm
+        else:
+            b['steam_pool'] = nums[0]
+
+    cent = []
+    for c in r2:
+        for n in re.findall(r'\d{4}', c):
+            if 600 <= int(n) <= 2359:
+                cent.append(n)
+    b['centrifuge'] = (cent[0] if cent else '', cent[1] if len(cent) > 1 else '')
+
+    mold_cols = _find_cols_by_range(r1, 1, 9999, 6)
+    for k, col in enumerate(mold_cols[:6]):
+        b['molds'][k] = _dig(_small_cell(r1, col))
+
+    for i, row in ((0, r1), (1, r2), (2, r3)):
+        digit_cells = [c for c in (row or []) if c is not None and _dig(c)]
+        if len(digit_cells) >= 2:
+            b['temps'][i] = _valid_range(_dig(digit_cells[-2]), 1, 150)
+            b['stages'][i] = _valid_range(_dig(digit_cells[-1]), 1, 150)
 
     return _normalize_band(b)
 
