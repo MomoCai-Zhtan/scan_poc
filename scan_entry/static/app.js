@@ -57,6 +57,8 @@ const pageImages = {};
 let pageAborter = null;        // AbortController for in-flight page requests
 let pdfStructure = null;       // 全頁結構 (from /api/pdf/<name>), for progressive rendering
 let _debounceTimer = null;     // debounce timer for recomputeDerived/computePositions
+let correctionCount = 0;       // 使用者修正次數
+let totalOcrFields = 0;        // OCR 填寫欄位總數
 
 function $(id){ return document.getElementById(id); }
 
@@ -211,6 +213,7 @@ function initBand(k){
       if (v !== undefined && v !== null && v !== ""){
         bandData[k].vals[c] = String(v);
         bandData[k].ocr[c] = true;
+        totalOcrFields++;
       }
     }));
     // 繼承標示: 被繼承的欄位標記 (徽標顯示「繼承」)
@@ -378,8 +381,12 @@ function buildStageForm(){
         }, 100);
       }
       const badge = inp.parentNode.querySelector(".ocr-badge");
-      if (badge) badge.remove();
+      if (badge) {
+        correctionCount++;
+        badge.remove();
+      }
       inp.classList.remove("has-ocr");
+      updateAccuracyDisplay();
     };
     inp.oninput = handleEdit;
     if (SELECT_COLS.includes(col)) inp.onchange = handleEdit;
@@ -664,6 +671,21 @@ function updateCollInfo(){
   }
 }
 
+function updateAccuracyDisplay(){
+  if (totalOcrFields <= 0) return;
+  const acc = window._accuracyData ? window._accuracyData.accuracy : null;
+  if (acc === null) return;
+  const corrected = correctionCount;
+  const actual = Math.max(0, acc - (corrected / totalOcrFields * 100));
+  const badge = document.querySelector(".accuracy-badge");
+  if (badge){
+    badge.textContent = "預期準確率: " + acc + "%";
+    if (corrected > 0){
+      badge.title = "預期準確率: " + acc + "% | 已修正 " + corrected + " 個欄位 | 實際約 " + actual.toFixed(1) + "%";
+    }
+  }
+}
+
 async function collectBand(){
   if (currentBand === null){ showMsg("請先選擇番次", false); return; }
   initBand(currentBand);
@@ -820,11 +842,14 @@ async function loadPage(page){
     }
     bandData = {};
     collectedBands = {};
+    correctionCount = 0;
+    totalOcrFields = 0;
     await syncCollectedBands();
     buildBandList();
     buildStageForm();
     computePositions();
     updateCollInfo();
+    updateAccuracyDisplay();
     drawCanvas();
     showMsg("第 " + page + " 頁 OCR 辨識完成 (" + pageTotalBands + " 番)", true);
   } catch (e) {
@@ -875,9 +900,12 @@ async function openPdf(name){
       const accData = await accRes.json();
       if (accData.accuracy != null) {
         const badge = document.createElement("span");
-        badge.className = "badge";
+        badge.className = "badge accuracy-badge";
         badge.style.marginLeft = "8px";
         badge.textContent = "預期準確率: " + accData.accuracy + "%";
+        if (accData.corrections != null && accData.corrections > 0){
+          badge.textContent += " (已修正 " + accData.corrections + ")";
+        }
         
         // Build tooltip with per-field accuracy
         let tooltip = "基於歷史 GT 資料的 OCR 辨識準確率\n\n";
