@@ -133,6 +133,8 @@ class CellSelector:
         tk.Button(toolbar, text='Merge Selected', command=self._merge_selected, width=15).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text='Clear Selection', command=self._clear_selection, width=15).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text='Name Selected', command=self._name_selected, width=15).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text='Save Session', command=self._save_session, width=12).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text='Load Session', command=self._load_session, width=12).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text='Export JSON', command=self._export, width=12).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text='Quit', command=self._quit, width=12, bg='#ffcccc').pack(side=tk.LEFT, padx=2)
         
@@ -311,6 +313,67 @@ class CellSelector:
         self._draw_cell_selection()
         self.status_var.set('Selection cleared')
     
+    def _save_session(self):
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+        
+        session = {
+            'selected_cells': list(self.selected_cells),
+            'fields': self.fields,
+            'h_lines': self.h_lines,
+            'v_lines': self.v_lines,
+            'template': os.path.basename(self.img_path)
+        }
+        
+        path = filedialog.asksaveasfilename(
+            defaultextension='.json',
+            filetypes=[('JSON files', '*.json'), ('All files', '*.*')],
+            initialfile='field_selector_session.json'
+        )
+        
+        if path:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(session, f, indent=2, ensure_ascii=False)
+            self.status_var.set(f'Session saved to {path}')
+            messagebox.showinfo('Save Session', f'Saved session to\n{path}')
+    
+    def _load_session(self):
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+        
+        path = filedialog.askopenfilename(
+            filetypes=[('JSON files', '*.json'), ('All files', '*.*')]
+        )
+        
+        if not path:
+            return
+        
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                session = json.load(f)
+            
+            # Validate session data
+            if 'fields' not in session or 'selected_cells' not in session:
+                raise ValueError('Invalid session file')
+            
+            # Restore state
+            self.fields = session.get('fields', {})
+            self.selected_cells = set(session.get('selected_cells', []))
+            if 'h_lines' in session:
+                self.h_lines = session['h_lines']
+            if 'v_lines' in session:
+                self.v_lines = session['v_lines']
+            
+            # Update UI
+            self._draw_grid()
+            self._draw_cell_selection()
+            self._refresh_field_list()
+            self.status_var.set(f'Loaded session from {path}')
+            messagebox.showinfo('Load Session', f'Loaded {len(self.fields)} fields from\n{path}')
+            
+        except Exception as e:
+            messagebox.showerror('Load Session', f'Failed to load session:\n{e}')
+    
     def _export(self):
         import tkinter as tk
         from tkinter import messagebox
@@ -328,6 +391,7 @@ class CellSelector:
         
         with open(self.output_path, 'w', encoding='utf-8') as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
+        self.status_var.set(f'Exported {len(self.fields)} fields')
         tk.messagebox.showinfo('Export', f'Saved {len(self.fields)} fields to\n{self.output_path}')
     
     def _quit(self):
@@ -335,6 +399,20 @@ class CellSelector:
         from tkinter import messagebox
         if self.fields and tk.messagebox.askyesno('Quit', 'Export before quitting?'):
             self._export()
+        
+        # Auto-save session
+        session_path = os.path.splitext(self.output_path)[0] + '_session.json'
+        session = {
+            'selected_cells': list(self.selected_cells),
+            'fields': self.fields,
+            'h_lines': self.h_lines,
+            'v_lines': self.v_lines,
+            'template': os.path.basename(self.img_path)
+        }
+        with open(session_path, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2, ensure_ascii=False)
+        print('Auto-saved session to', session_path)
+        
         self.root.destroy()
     
     def run(self):
