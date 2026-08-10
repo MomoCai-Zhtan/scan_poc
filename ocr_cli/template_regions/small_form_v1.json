@@ -3,20 +3,22 @@
   "template": "small_form_blank.png",
   "dpi": 200,
   "fields": {
-    "fan":       {"x": 48,  "y": 92,  "w": 119, "h": 75},
-    "item":      {"x": 167, "y": 92,  "w": 53,  "h": 75},
-    "molds":     {"x": 220, "y": 92,  "w": 106, "h": 75, "count": 6, "direction": "right"},
-    "speeds":    {"x": 484, "y": 92,  "w": 52,  "h": 75, "count": 4, "range": [100, 1400]},
-    "speed_times": {"x": 484, "y": 167, "w": 52,  "h": 75, "count": 4, "range": [1, 20]},
-    "steam_pool": {"x": 740, "y": 92,  "w": 68,  "h": 75},
-    "pool_time": {"x": 740, "y": 167, "w": 68,  "h": 75, "pattern": "\\d{4}", "range": [600, 2359]},
-    "temps":     {"x": 1186, "y": 92,  "w": 54,  "h": 75, "count": 3, "range": [1, 150]},
-    "stages":    {"x": 1186, "y": 167, "w": 54,  "h": 75, "count": 3, "range": [1, 150]}
+    "fan":       {"label": "番次", "col": 0},
+    "item":      {"label": "產品分別", "col": 1},
+    "molds":     {"label": "管模", "anchor": "管模", "direction": "right", "count": 6, "range": [1, 9999]},
+    "speeds":    {"label": "離心轉速", "anchor": "養生池", "direction": "left", "count": 4, "range": [100, 1400]},
+    "speed_times": {"label": "時間", "anchor": "離心轉速", "direction": "right", "count": 4, "range": [1, 20]},
+    "steam_pool": {"label": "養生池", "col": 13},
+    "pool_time": {"label": null, "col": 13, "pattern": "\\d{4}", "range": [600, 2359]},
+    "temps":     {"label": "養生溫度", "col": 21, "count": 3, "range": [1, 150]},
+    "stages":    {"label": "養生時間", "col": 22, "count": 3, "range": [1, 150]},
+    "centrifuge": {"label": "離心", "anchor": "離心", "direction": "right", "pattern": "\\d{4}", "range": [600, 2359]}
   },
   "anchors": {
-    "管模": {"x": 220, "y": 92, "w": 80, "h": 40},
-    "養生池": {"x": 740, "y": 92, "w": 80, "h": 40},
-    "養生溫度": {"x": 1186, "y": 92, "w": 80, "h": 40},
-    "養生時間": {"x": 1186, "y": 167, "w": 80, "h": 40}
+    "管模": {"field": "molds", "offset": 0},
+    "養生池": {"field": "steam_pool", "offset": 0},
+    "養生溫度": {"field": "temps", "offset": 0},
+    "養生時間": {"field": "stages", "offset": 0},
+    "離心": {"field": "centrifuge", "offset": 0}
   }
 }

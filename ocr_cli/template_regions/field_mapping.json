@@ -1,0 +1,36 @@
+{
+  "field_mapping": {
+    "品項": "item",
+    "模具編號1": "molds[0]",
+    "模具編號2": "molds[1]",
+    "模具編號3": "molds[2]",
+    "模具編號4": "molds[3]",
+    "模具編號5": "molds[4]",
+    "模具編號6": "molds[5]",
+    "加料轉速": "speeds[0]",
+    "慢速轉速": "speeds[1]",
+    "中速轉速": "speeds[2]",
+    "高速轉速": "speeds[3]",
+    "加料時間": "speed_times[0]",
+    "慢速時間": "speed_times[1]",
+    "中速時間": "speed_times[2]",
+    "高速時間": "speed_times[3]",
+    "蒸養池編號": "steam_pool",
+    "蒸養溫度1": "temps[0]",
+    "蒸養溫度2": "temps[1]",
+    "蒸養溫度3": "temps[2]",
+    "蒸養階段1": "stages[0]",
+    "蒸養階段2": "stages[1]",
+    "蒸養階段3": "stages[2]",
+    "離心開始": "centrifuge[0]",
+    "離心結束": "centrifuge[1]",
+    "番次": "fan"
+  },
+  "array_fields": {
+    "molds": {"prefix": "模具編號", "count": 6},
+    "speeds": {"prefix": "轉速", "count": 4},
+    "speed_times": {"prefix": "時間", "count": 4},
+    "temps": {"prefix": "蒸養溫度", "count": 3},
+    "stages": {"prefix": "蒸養階段", "count": 3}
+  }
+}
