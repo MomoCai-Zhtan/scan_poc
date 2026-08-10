@@ -744,6 +744,50 @@ def _first_non_empty_across_rows(rows, col_idx):
     return ''
 
 
+def _merge_rows_and_cols(rows):
+    """Collapse rows/cols that are empty or duplicated due to Excel merged cells.
+
+    Two merges are handled:
+    1. Column merge: an empty col that immediately follows a non-empty col is
+       collapsed into its left neighbour (Excel merged-cell gap).
+    2. Row merge: consecutive rows with the same 番次 and 品項 are collapsed
+       into one row, keeping the first non-empty value per column.
+
+    Returns the merged list of rows (each row is a list of cell strings).
+    """
+    if not rows:
+        return []
+    ncols = max(len(r) for r in rows)
+    padded = [r + [''] * (ncols - len(r)) for r in rows]
+
+    empty = [True] * ncols
+    for r in padded:
+        for j in range(ncols):
+            if r[j].strip():
+                empty[j] = False
+
+    keep = [True] * ncols
+    for j in range(1, ncols):
+        if empty[j] and not empty[j - 1]:
+            keep[j] = False
+
+    merged = [[r[j] for j in range(ncols) if keep[j]] for r in padded]
+
+    merged_rows = []
+    for r in merged:
+        if merged_rows:
+            prev = merged_rows[-1]
+            fan_eq = _small_cell(r, 0) == _small_cell(prev, 0)
+            item_eq = _small_cell(r, 1) == _small_cell(prev, 1)
+            if fan_eq and item_eq and _small_cell(r, 0):
+                for j in range(len(prev)):
+                    if j < len(r) and r[j].strip() and not prev[j].strip():
+                        prev[j] = r[j]
+                continue
+        merged_rows.append(r)
+    return merged_rows
+
+
 def _valid_range(d, lo, hi):
     if not d:
         return ''
@@ -809,7 +853,7 @@ def _parse_small_rows(r1, r2, r3):
         else:
             b['steam_pool'] = nums[0]
     for k in range(4):
-        b['speed_times'][k] = _first_non_empty(9 + k)
+        b['speed_times'][k] = _dig(_small_cell(r2, 9 + k))
     cent_cell = _small_cell(r2, 3)
     for row in (r2, r1, r3):
         v = _small_cell(row, 3)
@@ -824,8 +868,8 @@ def _parse_small_rows(r1, r2, r3):
         if len(ns) >= 2:
             b['centrifuge'] = (ns[0], ns[1])
     for i, row in ((0, r1), (1, r2), (2, r3)):
-        b['temps'][i] = _valid_range(_first_non_empty(21), 1, 150)
-        b['stages'][i] = _valid_range(_first_non_empty(22), 1, 150)
+        b['temps'][i] = _valid_range(_dig(_small_cell(row, 21)), 1, 150)
+        b['stages'][i] = _valid_range(_dig(_small_cell(row, 22)), 1, 150)
     return _normalize_band(b)
 
 
