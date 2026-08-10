@@ -722,6 +722,17 @@ def _small_cell(row, i):
     return row[i] if i < len(row) else ''
 
 
+def _first_non_empty_across_rows(rows, col_idx):
+    """Return first non-empty string value at col_idx across multiple rows.
+    Handles merged cells where value may appear in any row of the merge.
+    """
+    for row in rows:
+        v = _small_cell(row, col_idx)
+        if v and str(v).strip():
+            return str(v).strip()
+    return ''
+
+
 def _valid_range(d, lo, hi):
     if not d:
         return ''
@@ -741,18 +752,37 @@ def _parse_small_rows(r1, r2, r3):
     Values are range-validated to drop OCR 幻覺 that leaks digits from other
     cells (e.g. a cent time landing in the temps column).
     """
+    def _first_non_empty(col):
+        for row in (r1, r2, r3):
+            v = _dig(_small_cell(row, col))
+            if v:
+                return v
+        return ''
+
+    def _first_non_empty_item(col):
+        for row in (r1, r2, r3):
+            v = _small_cell(row, col)
+            if v and v.strip():
+                return normalize_item(v)
+        return ''
+
     b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
          'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
          'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
          'arrange': [], 'c14': [], 'c15': []}
     b['fan'] = _dig(_small_cell(r1, 0))
-    b['item'] = normalize_item(_small_cell(r1, 1))
+    b['item'] = _first_non_empty_item(1)
     for k in range(6):
-        b['molds'][k] = _dig(_small_cell(r1, 3 + k))
+        b['molds'][k] = _first_non_empty(3 + k)
     for k in range(4):
-        d = _dig(_small_cell(r1, 9 + k))
+        d = _first_non_empty(9 + k)
         b['speeds'][k] = _valid_range(d, 100, 1400)
     pool_cell = _small_cell(r1, 13)
+    for row in (r1, r2, r3):
+        v = _small_cell(row, 13)
+        if v and re.search(r'\d', v):
+            pool_cell = v
+            break
     nums = re.findall(r'\d+', pool_cell)
     if nums:
         if re.search(r'\d{4}', pool_cell):
@@ -768,9 +798,13 @@ def _parse_small_rows(r1, r2, r3):
         else:
             b['steam_pool'] = nums[0]
     for k in range(4):
-        d = _dig(_small_cell(r2, 9 + k))
-        b['speed_times'][k] = _valid_range(d, 1, 20)
+        b['speed_times'][k] = _first_non_empty(9 + k)
     cent_cell = _small_cell(r2, 3)
+    for row in (r2, r1, r3):
+        v = _small_cell(row, 3)
+        if v and re.search(r'\d{4}', v):
+            cent_cell = v
+            break
     cents = re.findall(r'\d{4}', cent_cell)
     if cents:
         b['centrifuge'] = (cents[0], cents[1] if len(cents) > 1 else '')
@@ -779,8 +813,8 @@ def _parse_small_rows(r1, r2, r3):
         if len(ns) >= 2:
             b['centrifuge'] = (ns[0], ns[1])
     for i, row in ((0, r1), (1, r2), (2, r3)):
-        b['temps'][i] = _valid_range(_dig(_small_cell(row, 21)), 1, 150)
-        b['stages'][i] = _valid_range(_dig(_small_cell(row, 22)), 1, 150)
+        b['temps'][i] = _valid_range(_first_non_empty(21), 1, 150)
+        b['stages'][i] = _valid_range(_first_non_empty(22), 1, 150)
     return _normalize_band(b)
 
 
@@ -815,7 +849,7 @@ def parse_small_band(row1, row2, row3):
             break
 
     item_idx = mold_idx - 1 if mold_idx >= 1 else 1
-    b['item'] = normalize_item(row1[item_idx] if item_idx < len(row1) else '')
+    b['item'] = normalize_item(_first_non_empty_across_rows([row1, row2, row3], item_idx))
 
     if mold_idx >= 0:
         after = row1[mold_idx + 1:]
@@ -889,20 +923,42 @@ def _small_crop(img, x0, x1, y0, y1, binarize=True, scale=2, thr=205):
         return None
     g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     if binarize:
-        _, g = cv2.threshold(g, thr, 255, cv2.THRESH_BINARY)
+        if thr == 'adaptive':
+            g = _adaptive_binarize(g)
+        else:
+            _, g = cv2.threshold(g, thr, 255, cv2.THRESH_BINARY)
     if scale != 1:
         g = cv2.resize(g, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     return cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
 
 
-def ocr_small_band(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, binarize=True):
+def _adaptive_binarize(gray):
+    """Adaptive binarization for faint/faded handwriting.
+
+    Uses Gaussian-weighted adaptive threshold to handle non-uniform lighting
+    and light pen strokes. Falls back to Otsu if the result is too noisy.
+    """
+    try:
+        g = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY, 11, 5)
+        if np.mean(g) < 200:
+            return g
+    except Exception:
+        pass
+    _, g = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return g
+
+
+def ocr_small_band(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, binarize=True, thr='adaptive'):
     """OCR one 小型 band strip (full width, band height) and parse its fields.
 
     Returns band dict, or {} on failure. One API call per band.
     """
     pages = st.render_pages(pdf_path, 200)
     img = pages[page_index]
-    crop = _small_crop(img, x0, x1, y0, y1, binarize=binarize, scale=scale)
+    crop = _small_crop(img, x0, x1, y0, y1, binarize=binarize, scale=scale, thr=thr)
+    if crop is None:
+        return {}
     if crop is None:
         return {}
     md = ocr_image(crop)
