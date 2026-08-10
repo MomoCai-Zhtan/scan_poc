@@ -910,6 +910,9 @@ def parse_small_band(row1, row2, row3):
     b = _parse_small_by_content(row1, row2, row3)
     if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
         return b
+    b = _parse_small_from_schema(row1, row2, row3)
+    if sum(1 for m in b['molds'] if m) or b['item'] or b['centrifuge'][0]:
+        return b
     b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
          'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
          'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
@@ -1057,6 +1060,146 @@ def _parse_small_by_content(r1, r2, r3):
 
 
 def _md_data_rows(md):
+    """Extract markdown table data rows as cell lists (skip header/separator)."""
+    lines = [l for l in md.split('\n') if l.startswith('|')]
+    parsed = [[c.strip() for c in l.strip('|').split('|')] for l in lines]
+    out = []
+    for row in parsed:
+        if any('---' in c for c in row):
+            continue
+        if sum(1 for c in row if _dig(c)) >= 2 or sum(1 for c in row if '模' in c or '時' in c) >= 1:
+            out.append(row)
+    return out
+
+
+def _load_small_form_schema():
+    """Load small form field schema from JSON file."""
+    import json
+    schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'small_form_schema.json')
+    with open(schema_path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _find_anchor_col(row, label):
+    """Find column index of a label in a markdown row."""
+    for j, c in enumerate(row):
+        if label in c:
+            return j
+    return -1
+
+
+def _find_cols_in_range(row, lo, hi, count):
+    """Find column indices where digit values fall in [lo, hi]."""
+    cols = []
+    for j, c in enumerate(row):
+        d = _dig(c)
+        if d:
+            try:
+                v = int(d)
+                if lo <= v <= hi:
+                    cols.append(j)
+                    if len(cols) >= count:
+                        break
+            except ValueError:
+                pass
+    return cols
+
+
+def _parse_small_from_schema(r1, r2, r3):
+    """JSON schema-based parser for 小型 band.
+    
+    Uses small_form_schema.json to:
+    1. Locate anchor labels (管模, 養生池, etc.) in markdown rows
+    2. Search within col_range for values matching range/pattern
+    3. Merge sub-rows for the same band
+    """
+    schema = _load_small_form_schema()
+    fields = schema.get('small_form', {}).get('fields', {})
+    anchors = schema.get('small_form', {}).get('anchors', {})
+    
+    b = {'fan': '', 'item': '', 'molds': [''] * 6, 'centrifuge': ('', ''),
+         'speeds': [''] * 4, 'speed_times': [''] * 4, 'steam_pool': '',
+         'pool_time': '', 'temps': [''] * 3, 'stages': [''] * 3,
+         'arrange': [], 'c14': [], 'c15': []}
+    
+    rows = [r1, r2, r3]
+    
+    for field_name, cfg in fields.items():
+        label = cfg.get('label')
+        col_range = cfg.get('col_range', [0, 0])
+        row_indices = cfg.get('row', [0])
+        field_type = cfg.get('type', 'string')
+        count = cfg.get('count', 1)
+        range_val = cfg.get('range')
+        pattern = cfg.get('pattern')
+        
+        if field_name == 'fan':
+            b['fan'] = _dig(_small_cell(r1, 0))
+            continue
+        
+        if field_name == 'item':
+            item_val = _first_non_empty_item_across_rows([r1, r2, r3], 1)
+            b['item'] = normalize_item(item_val)
+            continue
+        
+        if field_type == 'int' and count > 1:
+            for k in range(count):
+                col = col_range[0] + k if col_range[0] == col_range[1] else col_range[0] + k
+                vals = []
+                for ri in row_indices:
+                    if ri < len(rows):
+                        v = _dig(_small_cell(rows[ri], col))
+                        if v and range_val:
+                            try:
+                                if range_val[0] <= int(v) <= range_val[1]:
+                                    vals.append(v)
+                            except ValueError:
+                                pass
+                b[field_name][k] = vals[0] if vals else ''
+            continue
+        
+        if field_type == 'time_range' and label:
+            anchor_col = _find_anchor_col(r1, label)
+            if anchor_col >= 0:
+                cent = []
+                for c in r2:
+                    for n in re.findall(r'\d{4}', c):
+                        if 600 <= int(n) <= 2359:
+                            cent.append(n)
+                b['centrifuge'] = (cent[0] if cent else '', cent[1] if len(cent) > 1 else '')
+            continue
+        
+        if field_type == 'time' and pattern:
+            pool_cell = _small_cell(r1, col_range[0])
+            for ri in row_indices:
+                if ri < len(rows):
+                    v = _small_cell(rows[ri], col_range[0])
+                    if v and re.search(r'\d', v):
+                        pool_cell = v
+                        break
+            nums = re.findall(r'\d+', pool_cell)
+            if nums:
+                if re.search(r'\d{4}', pool_cell):
+                    m = re.search(r'\d{4}', pool_cell)
+                    b['steam_pool'] = nums[0]
+                    if _valid_range(m.group(0), 600, 2359):
+                        b['pool_time'] = m.group(0)
+                elif len(nums) >= 3 and len(nums[1]) == 2 and len(nums[2]) == 2:
+                    b['steam_pool'] = nums[0]
+                    hhmm = nums[1] + nums[2]
+                    if _valid_range(hhmm, 600, 2359):
+                        b['pool_time'] = hhmm
+                else:
+                    b['steam_pool'] = nums[0]
+            continue
+    
+    for i, row in ((0, r1), (1, r2), (2, r3)):
+        digit_cells = [c for c in (row or []) if c is not None and _dig(c)]
+        if len(digit_cells) >= 2:
+            b['temps'][i] = _valid_range(_dig(digit_cells[-2]), 1, 150)
+            b['stages'][i] = _valid_range(_dig(digit_cells[-1]), 1, 150)
+    
+    return _normalize_band(b)
     """Extract markdown table data rows as cell lists (skip header/separator)."""
     lines = [l for l in md.split('\n') if l.startswith('|')]
     parsed = [[c.strip() for c in l.strip('|').split('|')] for l in lines]

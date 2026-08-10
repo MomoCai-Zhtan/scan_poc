@@ -1,0 +1,23 @@
+{
+  "small_form": {
+    "fields": {
+      "fan":       {"label": "番次", "row": [0], "col_range": [0, 1], "type": "string"},
+      "item":      {"label": "產品分別", "row": [0, 1, 2], "col_range": [1, 2], "type": "string"},
+      "molds":     {"label": "管模", "row": [0], "col_range": [3, 8], "count": 6, "type": "int", "range": [1, 9999]},
+      "speeds":    {"label": "離心轉速", "row": [0], "col_range": [9, 12], "count": 4, "type": "int", "range": [100, 1400]},
+      "speed_times": {"label": "時間", "row": [1], "col_range": [9, 12], "count": 4, "type": "int", "range": [1, 20]},
+      "steam_pool": {"label": "養生池", "row": [0, 1, 2], "col_range": [13, 13], "type": "string"},
+      "pool_time": {"label": null, "row": [0, 1, 2], "col_range": [13, 13], "type": "time", "pattern": "\\d{4}", "range": [600, 2359]},
+      "temps":     {"label": "養生溫度", "row": [0, 1, 2], "col_range": [21, 21], "count": 3, "type": "int", "range": [1, 150]},
+      "stages":    {"label": "養生時間", "row": [0, 1, 2], "col_range": [22, 22], "count": 3, "type": "int", "range": [1, 150]},
+      "centrifuge": {"label": "離心", "row": [1], "col_range": [3, 8], "type": "time_range", "pattern": "\\d{4}", "range": [600, 2359]}
+    },
+    "anchors": {
+      "管模": {"field": "molds", "offset": 0},
+      "養生池": {"field": "steam_pool", "offset": 0},
+      "養生溫度": {"field": "temps", "offset": 0},
+      "養生時間": {"field": "stages", "offset": 0},
+      "離心": {"field": "centrifuge", "offset": 0}
+    }
+  }
+}
