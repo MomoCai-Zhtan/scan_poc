@@ -79,6 +79,8 @@
   .field-row input:focus, .field-row select:focus { border-color: var(--blue); outline: none; }
   .field-row input.has-ocr { background: #e8f5e9; }
   .field-row input.auto-warn { background: #fef9e7; border-color: var(--warn) !important; }
+  .field-row input.accuracy-warn { background: #fff5f5; border-color: #e74c3c !important; }
+  .accuracy-hint { background: #e74c3c; color: #fff; border-radius: 3px; padding: 1px 6px; font-size: 11px; margin-left: 6px; }
   .field-row.grid-row { display: flex; gap: 6px; }
   .field-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .field-cell label { flex: none; font-size: 10px; text-align: center; color: #333; line-height: 1.1;

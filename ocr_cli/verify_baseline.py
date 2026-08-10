@@ -215,6 +215,13 @@ def perband_auto_fields(pdf_path, page_index, rows):
     return bands
 
 
+def _track_field(summary, field, idx, is_ok):
+    key = '%s[%d]' % (field, idx)
+    summary['per_field_totals'][key] = summary['per_field_totals'].get(key, 0) + 1
+    if not is_ok:
+        summary['per_field_errors'][key] = summary['per_field_errors'].get(key, 0) + 1
+
+
 def verify_pdf(pdf_name, do_arrange, perband, summary):
     roc, iso, disp = A.filename_date(pdf_name)
     csv_path = os.path.join(CSV_DIR, disp + '.csv')
@@ -245,6 +252,7 @@ def verify_pdf(pdf_name, do_arrange, perband, summary):
                 summary['tot'] += tot
                 summary['ok'] += ok
                 for field, idx, g, o, is_ok in res:
+                    _track_field(summary, field, idx, is_ok)
                     if not is_ok:
                         summary['errs'].append(
                             '%s 小型 番%d %s[%d] GT=%r OCR=%r' % (pdf_name, bi + 1, field, idx, g, o))
@@ -271,6 +279,7 @@ def verify_pdf(pdf_name, do_arrange, perband, summary):
             summary['tot'] += tot
             summary['ok'] += ok
             for field, idx, g, o, is_ok in res:
+                _track_field(summary, field, idx, is_ok)
                 if not is_ok:
                     summary['errs'].append(
                         '%s %s 番%d %s[%d] GT=%r OCR=%r' % (pdf_name, shift, i + 1, field, idx, g, o))
@@ -297,7 +306,7 @@ def main():
                       and os.path.exists(os.path.join(CSV_DIR,
                           A.filename_date(f)[2] + '.csv')))
 
-    summary = {'tot': 0, 'ok': 0, 'errs': [], 'warn': [], 'per_field': {}}
+    summary = {'tot': 0, 'ok': 0, 'errs': [], 'warn': [], 'per_field': {}, 'per_field_totals': {}, 'per_field_errors': {}}
     for pdf in pdfs:
         verify_pdf(pdf, do_arrange, perband, summary)
 

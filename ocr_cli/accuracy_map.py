@@ -15,10 +15,22 @@ CACHE_PATH = os.path.join(ROOT, 'scan_entry', 'data', 'accuracy_map.json')
 
 
 def compute_one(pdf):
-    summary = {'tot': 0, 'ok': 0, 'errs': [], 'warn': [], 'per_field': {}}
+    summary = {'tot': 0, 'ok': 0, 'errs': [], 'warn': [], 'per_field': {},
+               'per_field_totals': {}, 'per_field_errors': {}}
     vb.verify_pdf(pdf, do_arrange=False, perband=False, summary=summary)
     tot, ok = summary['tot'], summary['ok']
     acc = 100.0 * ok / tot if tot else 0.0
+    
+    # Compute per-field accuracy
+    per_field_acc = {}
+    for key, total in summary['per_field_totals'].items():
+        errors = summary['per_field_errors'].get(key, 0)
+        per_field_acc[key] = {
+            'total': total,
+            'correct': total - errors,
+            'accuracy': round(100.0 * (total - errors) / total, 1) if total else 0
+        }
+    
     return {
         'pdf': pdf,
         'total': tot,
@@ -26,6 +38,7 @@ def compute_one(pdf):
         'accuracy': round(acc, 1),
         'errors': len(summary['errs']),
         'warnings': len(summary['warn']),
+        'per_field': per_field_acc,
     }
 
 

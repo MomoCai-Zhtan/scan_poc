@@ -412,10 +412,44 @@ function buildStageForm(){
       inp.classList.add("auto-warn");
       const msgs = [];
       if (bf.item_uncertain.includes("vocab")) msgs.push("不在已知品項詞彙表內");
-      if (bf.item_uncertain.includes("neighbor")) msgs.push("與前後番品項不同");
-      inp.title = "品項可疑 (" + msgs.join("、") + "),請人工確認是否誤讀 (例如讀到鄰欄數字)";
+      if (bf.item_uncertain.includes("neighbor")) msgs.push("與前後番品項不同,可能誤讀");
+      inp.title = (inp.title ? inp.title + "\n" : "") + "品項可疑: " + msgs.join("; ");
+    }
+    // Accuracy hint: highlight fields with low historical accuracy
+    if (window._accuracyData && window._accuracyData.per_field){
+      const acc = getFieldAccuracy(col);
+      if (acc !== null && acc < 90){
+        inp.classList.add("accuracy-warn");
+        const hint = document.createElement("span");
+        hint.className = "accuracy-hint";
+        hint.textContent = "⚠️ " + acc + "%";
+        hint.title = "此欄位歷史準確率僅 " + acc + "%，請特別留意";
+        el.appendChild(hint);
+      }
     }
   };
+
+  function getFieldAccuracy(col){
+    if (!window._accuracyData || !window._accuracyData.per_field) return null;
+    const pf = window._accuracyData.per_field;
+    // Map column name to per-field keys
+    const fieldMap = {
+      "品項": "item[0]",
+      "轉位1": "molds[0]", "轉位2": "molds[1]", "轉位3": "molds[2]", "轉位4": "molds[3]",
+      "轉位5": "molds[4]", "轉位6": "molds[5]",
+      "離心開始": "cent[0]", "離心結束": "cent[1]",
+      "加料轉速": "speeds[0]", "慢速轉速": "speeds[1]", "中速轉速": "speeds[2]", "高速轉速": "speeds[3]",
+      "加料時間": "times[0]", "慢速時間": "times[1]", "中速時間": "times[2]", "高速時間": "times[3]",
+      "蒸養池": "pool[0]", "入池時間": "pool_time[0]",
+      "蒸養溫度1": "temps[0]", "蒸養溫度2": "temps[1]", "蒸養溫度3": "temps[2]",
+      "蒸養階段1": "stages[0]", "蒸養階段2": "stages[1]", "蒸養階段3": "stages[2]",
+      "排列1": "arrange[0]", "排列2": "arrange[1]", "排列3": "arrange[2]",
+      "排列4": "arrange[3]", "排列5": "arrange[4]", "排列6": "arrange[5]",
+    };
+    const key = fieldMap[col];
+    if (!key || !pf[key]) return null;
+    return pf[key].accuracy;
+  }
 
   const buildCell = (col) => {
     const cell = document.createElement("div");
@@ -844,8 +878,34 @@ async function openPdf(name){
         badge.className = "badge";
         badge.style.marginLeft = "8px";
         badge.textContent = "預期準確率: " + accData.accuracy + "%";
-        badge.title = "基於歷史 GT 資料的 OCR 辨識準確率";
+        
+        // Build tooltip with per-field accuracy
+        let tooltip = "基於歷史 GT 資料的 OCR 辨識準確率\n\n";
+        if (accData.per_field) {
+          const lowFields = [];
+          const allFields = [];
+          for (const [field, stats] of Object.entries(accData.per_field)) {
+            const acc = stats.accuracy;
+            allFields.push(field + ': ' + acc + '%');
+            if (acc < 90) {
+              lowFields.push(field + ': ' + acc + '% (弱勢欄位)');
+            }
+          }
+          tooltip += '整體: ' + accData.accuracy + '% (' + accData.correct + '/' + accData.total + ')\n';
+          tooltip += '錯誤數: ' + accData.errors + '\n\n';
+          if (lowFields.length > 0) {
+            tooltip += '⚠️ 弱勢欄位 (準確率 < 90%):\n';
+            tooltip += lowFields.join('\n') + '\n\n';
+          }
+          tooltip += '所有欄位:\n' + allFields.join('\n');
+        } else {
+          tooltip += '正確: ' + accData.correct + '/' + accData.total;
+        }
+        badge.title = tooltip;
         $("dateInfo").appendChild(badge);
+        
+        // Store per-field data for form hints
+        window._accuracyData = accData;
       }
     } catch (e) { /* ignore accuracy fetch error */ }
 
