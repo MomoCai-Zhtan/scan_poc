@@ -25,6 +25,7 @@ DB_PATH = os.path.join(ROOT, 'scan_entry', 'data', 'collections.db')
 sys.path.insert(0, OCR)
 import analysis
 import structure as st
+import accuracy_map as am
 
 app = flask.Flask(__name__, static_folder='static', static_url_path='/static')
 app.secret_key = os.environ.get('FLASK_SECRET', 'scan-entry-secret-2026')
@@ -318,6 +319,21 @@ def api_band_ocr(name, page, band):
         cached.setdefault('auto_fields', {})[band] = band_data
         _page_cache_save(cache_path, name, page, cached)
     return flask.jsonify({'ok': True, 'band': band, 'fields': band_data})
+
+
+@app.route('/api/accuracy/<path:name>')
+def api_accuracy(name):
+    """Return expected OCR accuracy for a PDF (from pre-computed baseline)."""
+    key = name.replace('.pdf', '')
+    cached = am.load()
+    if cached and key in cached:
+        return flask.jsonify(cached[key])
+    # Fallback: return general estimate by form type
+    return flask.jsonify({
+        'pdf': name,
+        'accuracy': None,
+        'message': '無預先計算 baseline，開啟頁面後會自動顯示實際 OCR 準確率參考'
+    })
 
 
 @app.route('/api/collection', methods=['GET'])

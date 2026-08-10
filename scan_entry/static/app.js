@@ -834,6 +834,21 @@ async function openPdf(name){
     totalPages = pdfStructure.pages.length;
     showPageNav(true);
     $("dateInfo").textContent = "日期 " + (pdfStructure.date_disp || "");
+
+    // Fetch expected accuracy
+    try {
+      const accRes = await fetch("/api/accuracy/" + encodeURIComponent(name));
+      const accData = await accRes.json();
+      if (accData.accuracy != null) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.style.marginLeft = "8px";
+        badge.textContent = "預期準確率: " + accData.accuracy + "%";
+        badge.title = "基於歷史 GT 資料的 OCR 辨識準確率";
+        $("dateInfo").appendChild(badge);
+      }
+    } catch (e) { /* ignore accuracy fetch error */ }
+
     renderPageStructure(currentPage);
     showMsg("載入結構完成 (共 " + totalPages + " 頁)，OCR 背景辨識中...", true);
     hideLoading();
