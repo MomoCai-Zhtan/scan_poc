@@ -830,7 +830,7 @@ def _parse_small_rows(r1, r2, r3):
     for k in range(6):
         b['molds'][k] = _first_non_empty(3 + k)
     for k in range(4):
-        d = _first_non_empty(9 + k)
+        d = _dig(_small_cell(r1, 9 + k))
         b['speeds'][k] = _valid_range(d, 100, 1400)
     pool_cell = _small_cell(r1, 13)
     for row in (r1, r2, r3):
