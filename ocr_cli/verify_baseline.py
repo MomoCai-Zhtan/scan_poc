@@ -217,6 +217,10 @@ def perband_auto_fields(pdf_path, page_index, rows):
 
 def _track_field(summary, field, idx, is_ok):
     key = '%s[%d]' % (field, idx)
+    if 'per_field_totals' not in summary:
+        summary['per_field_totals'] = {}
+    if 'per_field_errors' not in summary:
+        summary['per_field_errors'] = {}
     summary['per_field_totals'][key] = summary['per_field_totals'].get(key, 0) + 1
     if not is_ok:
         summary['per_field_errors'][key] = summary['per_field_errors'].get(key, 0) + 1

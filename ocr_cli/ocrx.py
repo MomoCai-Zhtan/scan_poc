@@ -975,8 +975,8 @@ def ocr_small_band(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, binari
     return parse_small_band(r1, r2, r3)
 
 
-def ocr_small_strip(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, thr=205, raw=False):
-    """OCR a horizontal strip spanning several 小型 bands; parse into per-band dicts.
+def ocr_small_strip(pdf_path, page_index, y0, y1, x0=30, x1=1500, scale=2, thr='adaptive', raw=False):
+    """OCR a strip of 3 小型 bands, full width, and parse into band dicts.
 
     Returns dict {band_offset: band_dict}, band_offset relative to the strip's
     first band. A strip containing N bands produces N dicts (some may be {}).
@@ -1174,6 +1174,29 @@ def ocr_small_page(pdf_path, page_index, rows, cols, field_crops=False):
         y0, y1 = rows[bi]
         band_read = ocr_small_band(pdf_path, page_index, y0, y1)
         bands[bi] = _merge_fullest(strip_reads.get(bi), band_read) or {}
+
+    # Multi-pass retry: for bands missing critical fields, try different binarization
+    _critical_fields = ['item', 'centrifuge', 'steam_pool', 'pool_time']
+    _retry_thresholds = [160, 180, 205]  # Fixed thresholds as fallback
+    for bi in range(n):
+        b = bands.get(bi) or {}
+        missing = [f for f in _critical_fields if not b.get(f)]
+        if not missing:
+            continue
+        best = b
+        for thr in _retry_thresholds:
+            y0, y1 = rows[bi]
+            retry = ocr_small_band(pdf_path, page_index, y0, y1, thr=thr)
+            if not retry:
+                continue
+            candidate = _merge_fullest(best, retry)
+            best_fields = sum(1 for f in _critical_fields if best.get(f))
+            cand_fields = sum(1 for f in _critical_fields if candidate.get(f))
+            if cand_fields > best_fields:
+                best = candidate
+                if not missing or not [f for f in missing if not candidate.get(f)]:
+                    break
+        bands[bi] = best
 
     if field_crops:
         field_boxes = {}
