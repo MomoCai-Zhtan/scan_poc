@@ -19,7 +19,7 @@ import sys
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -86,7 +86,7 @@ class FieldSelector:
         toolbar.pack(side=tk.TOP, fill=tk.X)
         
         try:
-            from PIL import Image, ImageDraw
+            from PIL import Image, ImageDraw, ImageTk
             icon_size = 24
             icons = {
                 'Undo': ('undo', '#2196F3'),
@@ -179,7 +179,9 @@ class FieldSelector:
         self.start_pos = None
         self.canvas.delete('current_rect')
         
-        name = tk.simpledialog.askstring('Field Name', 'Enter field name:', parent=self.root)
+        import tkinter as tk
+        from tkinter import simpledialog
+        name = simpledialog.askstring('Field Name', 'Enter field name:', parent=self.root)
         if name:
             name = name.strip()
             if name:
@@ -227,7 +229,9 @@ class FieldSelector:
         if sel:
             idx = sel[0]
             name = list(self.fields.keys())[idx]
-            new_name = tk.simpledialog.askstring('Rename', 'New name:', initialvalue=name, parent=self.root)
+            import tkinter as tk
+            from tkinter import simpledialog
+            new_name = simpledialog.askstring('Rename', 'New name:', initialvalue=name, parent=self.root)
             if new_name and new_name.strip() and new_name != name:
                 self.fields[new_name.strip()] = self.fields.pop(name)
                 self.canvas.itemconfig(name, tags=new_name.strip())
@@ -235,19 +239,23 @@ class FieldSelector:
                 self.status_var.set(f'Renamed: {name} -> {new_name}')
     
     def _export(self):
+        import tkinter as tk
+        from tkinter import messagebox
         if not self.fields:
-            tk.messagebox.showwarning('Export', 'No fields to export')
+            messagebox.showwarning('Export', 'No fields to export')
             return
         with open(self.output_path, 'w', encoding='utf-8') as f:
             json.dump(self.fields, f, indent=2, ensure_ascii=False)
         self.status_var.set(f'Exported {len(self.fields)} fields')
-        tk.messagebox.showinfo('Export', f'Saved {len(self.fields)} fields to\n{self.output_path}')
+        messagebox.showinfo('Export', f'Saved {len(self.fields)} fields to\n{self.output_path}')
     
     def _save(self):
         self._export()
     
     def _quit(self):
-        if self.fields and tk.messagebox.askyesno('Quit', 'Export before quitting?'):
+        import tkinter as tk
+        from tkinter import messagebox
+        if self.fields and messagebox.askyesno('Quit', 'Export before quitting?'):
             self._export()
         self.root.destroy()
     
