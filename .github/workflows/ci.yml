@@ -69,6 +69,12 @@ jobs:
           python ocr_cli/verify_baseline.py --all --json --threshold 75 > baseline.json || true
           echo "BASELINE_EXIT=$?" >> $GITHUB_ENV
 
+      - name: Generate accuracy map
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          python ocr_cli/accuracy_map.py --save || true
+
       - name: Upload baseline report
         if: always()
         uses: actions/upload-artifact@v4
