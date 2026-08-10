@@ -39,7 +39,7 @@ def _load_env():
     return cfg
 
 _cfg = _load_env()
-OCR_API_KEY = _cfg.get('MISTRAL_API_KEY', '')
+OCR_API_KEYS = [k for k in [_cfg.get('MISTRAL_API_KEY', ''), _cfg.get('MISTRAL_API_KEY_MS', '')] if k]
 OCR_MODEL = _cfg.get('MISTRAL_MODEL', 'mistral-ocr-latest')
 OCR_API_URL = _cfg.get('MISTRAL_API_URL', 'https://api.mistral.ai/v1/ocr')
 
@@ -97,36 +97,47 @@ def _normalize_band(b):
 
 
 def ocr_image(bgr):
-    """Send an in-memory BGR image to Mistral OCR. Returns markdown string."""
-    if not OCR_API_KEY:
-        log.error('OCR aborted: MISTRAL_API_KEY not set')
+    """Send an in-memory BGR image to Mistral OCR. Returns markdown string.
+    Tries multiple API keys if available (fallback on 402).
+    """
+    if not OCR_API_KEYS:
+        log.error('OCR aborted: no MISTRAL_API_KEY configured')
         return None
     t0 = time.time()
     _, buf = cv2.imencode('.png', bgr)
     b64 = base64.b64encode(buf.tobytes()).decode('utf-8')
-
-    headers = {'Authorization': f'Bearer {OCR_API_KEY}', 'Content-Type': 'application/json'}
     data = {
         'model': OCR_MODEL,
         'document': {'type': 'image_url', 'image_url': f'data:image/png;base64,{b64}'},
         'include_image_base64': False,
     }
-    try:
-        resp = httpx.post(OCR_API_URL, headers=headers, json=data, timeout=120)
-    except Exception as e:
-        log.error('OCR request exception: %s', repr(e))
-        return None
-    dt = time.time() - t0
-    if resp.status_code != 200:
+    last_err = None
+    for key in OCR_API_KEYS:
+        headers = {'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
+        try:
+            resp = httpx.post(OCR_API_URL, headers=headers, json=data, timeout=120)
+        except Exception as e:
+            last_err = e
+            continue
+        dt = time.time() - t0
+        if resp.status_code == 200:
+            result = resp.json()
+            pages_data = result.get('pages', [])
+            if pages_data:
+                md = pages_data[0].get('markdown', '')
+                log.info('OCR ok len=%d elapsed=%.1fs key=%s...', len(md), dt, key[:8])
+                return md
+            log.warning('OCR api 200 but no pages (elapsed=%.1fs)', dt)
+            return None
+        if resp.status_code == 402:
+            log.warning('OCR api 402 for key=%s... trying next key', key[:8])
+            continue
         log.error('OCR api status=%d elapsed=%.1fs body=%.150s', resp.status_code, dt, resp.text)
         return None
-    result = resp.json()
-    pages_data = result.get('pages', [])
-    if pages_data:
-        md = pages_data[0].get('markdown', '')
-        log.info('OCR ok len=%d elapsed=%.1fs', len(md), dt)
-        return md
-    log.warning('OCR api 200 but no pages (elapsed=%.1fs)', dt)
+    if last_err:
+        log.error('OCR request exception: %s', repr(last_err))
+    else:
+        log.error('OCR all keys failed with 402')
     return None
 
 
