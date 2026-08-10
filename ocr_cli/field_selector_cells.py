@@ -197,11 +197,12 @@ class CellSelector:
             self.canvas.create_rectangle(cx, cy, cx + cw, cy + ch, outline='#dddddd', width=1, tags='grid')
     
     def _refresh_field_list(self):
+        import tkinter as tk
         self.field_listbox.delete(0, tk.END)
         for name, rect in self.fields.items():
             merged = rect.get('merged_from', [])
-            merge_info = f' ({len(merged)} cells)' if merged else ''
-            self.field_listbox.insert(tk.END, f'{name}: ({rect["x"]},{rect["y"]}) {rect["w"]}x{rect["h"]}{merge_info}')
+            merge_info = ' (%d cells)' % len(merged) if merged else ''
+            self.field_listbox.insert(tk.END, '%s: (%d,%d) %dx%d%s' % (name, rect['x'], rect['y'], rect['w'], rect['h'], merge_info))
     
     def _on_cell_click(self, event):
         x, y = self._canvas_to_image(event.x, event.y)
@@ -217,17 +218,21 @@ class CellSelector:
         if clicked_idx is None:
             return
         
-        # Toggle selection
-        if event.state & 0x0001:  # Shift key
+        # Check for multi-select modifier (Shift or Control)
+        modifiers = event.state
+        is_shift = modifiers & 0x0001 != 0  # Shift
+        is_ctrl = modifiers & 0x0004 != 0   # Control
+        
+        if is_shift or is_ctrl:
             if clicked_idx in self.selected_cells:
-                self.selected_cells.remove(clicked_idx)
+                self.selected_cells.discard(clicked_idx)
             else:
                 self.selected_cells.add(clicked_idx)
         else:
             self.selected_cells = {clicked_idx}
         
         self._draw_cell_selection()
-        self.status_var.set(f'Selected {len(self.selected_cells)} cells: {sorted(self.selected_cells)}')
+        self.status_var.set('Selected %d cells: %s' % (len(self.selected_cells), sorted(self.selected_cells)))
     
     def _canvas_to_image(self, cx, cy):
         return int(cx / self.scale), int(cy / self.scale)
@@ -240,7 +245,7 @@ class CellSelector:
             cx, cy = x * self.scale, y * self.scale
             cw, ch = w * self.scale, h * self.scale
             self.canvas.create_rectangle(cx, cy, cx + cw, cy + ch, outline='gold', width=3, tags='selection')
-            self.canvas.create_text(cx + 3, cy + 3, text=str(idx), anchor=tk.NW, fill='gold', font=('Arial', 9, 'bold'), tags='selection')
+            self.canvas.create_text(cx + 3, cy + 3, text=str(idx), anchor='nw', fill='gold', font=('Arial', 9, 'bold'), tags='selection')
     
     def _merge_selected(self):
         import tkinter as tk
