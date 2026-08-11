@@ -30,6 +30,7 @@
     <button onclick="saveSession()">儲存 Session</button>
     <button onclick="document.getElementById('sessionLoad').click()">載入 Session</button>
     <input type="file" id="sessionLoad" accept=".json" style="display:none" onchange="loadSession(event)">
+    <button onclick="loadRegionsFromServer()">從 Server 載入 Regions</button>
     <button onclick="exportJson()">匯出 JSON</button>
     <button onclick="if(confirm('確定離開?'))history.back()">離開</button>
   </div>
@@ -275,7 +276,7 @@ function loadSession(e) {
       selectedCells = new Set(session.selectedCells || []);
       fields = session.fields || {};
       hLines = session.hLines || [];
-      vLines = session.v_lines || [];
+      vLines = session.vLines || session.v_lines || [];
       
       if (session.template) {
         document.getElementById('templateSelect').value = session.template;
@@ -312,6 +313,24 @@ function exportJson() {
   a.click();
   URL.revokeObjectURL(url);
   setStatus('Exported JSON');
+}
+
+async function loadRegionsFromServer() {
+  const template = document.getElementById('templateSelect').value;
+  
+  try {
+    const data = await api(`/admin/regions/${template}_form_v1.json`);
+    if (data.error) return alert(data.error);
+    
+    fields = data.fields || {};
+    selectedCells.clear();
+    
+    render();
+    updateFieldList();
+    setStatus(`Loaded ${Object.keys(fields).length} regions from server`);
+  } catch (e) {
+    setStatus('Error loading regions: ' + e.message);
+  }
 }
 
 // Load template image
