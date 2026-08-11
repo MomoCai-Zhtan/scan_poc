@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Admin 登入{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/login.css">
+{% endblock %}
+
+{% block header %}{% endblock %}
+
+{% block container %}
+<div class="login-card">
+  <h1>Admin 登入</h1>
+  <p class="subtitle">生產記錄掃描系統 · 後台管理</p>
+  {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+  <form method="post" action="/admin/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="login-field">
+      <label for="username">帳號</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="login-field">
+      <label for="password">密碼</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="login-submit">登入</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}

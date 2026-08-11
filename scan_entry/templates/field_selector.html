@@ -1,20 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Web Field Selector</title>
+{% extends "base.html" %}
+
+{% block title %}Web Field Selector{% endblock %}
+
+{% block head %}
 <link rel="stylesheet" href="/static/selector.css">
-</head>
-<body>
-<header>
-  <h1>Web Field Selector</h1>
-  <nav>
+{% endblock %}
+
+{% block header_title %}Web Field Selector{% endblock %}
+
+{% block nav %}
     <a href="/">回首頁</a>
     <a href="/admin">Admin</a>
-  </nav>
-</header>
+    <form action="/admin/logout" method="post" style="display:inline">
+      <button type="submit" class="link-btn">登出</button>
+    </form>
+{% endblock %}
 
+{% block container %}
 <main>
   <div class="toolbar">
     <label>Template:
@@ -52,7 +54,9 @@
     </div>
   </div>
 </main>
+{% endblock %}
 
+{% block scripts %}
 <script>
 const canvas = document.getElementById('selectorCanvas');
 const ctx = canvas.getContext('2d');
@@ -73,17 +77,17 @@ function setStatus(msg) {
 
 function render() {
   if (!img.complete) return;
-  
+
   const maxW = 900, maxH = 700;
   scale = Math.min(maxW / img.width, maxH / img.height, 1);
   canvas.width = img.width * scale;
   canvas.height = img.height * scale;
-  
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  
+
   // Draw grid lines - darker for visibility
   ctx.strokeStyle = '#888';
   ctx.lineWidth = 1;
@@ -101,7 +105,7 @@ function render() {
     ctx.stroke();
   }
   ctx.setLineDash([]);
-  
+
   // Draw cells
   for (let i = 0; i < cells.length; i++) {
     const c = cells[i];
@@ -109,7 +113,7 @@ function render() {
     ctx.lineWidth = 1;
     ctx.strokeRect(c.x * scale, c.y * scale, c.w * scale, c.h * scale);
   }
-  
+
   // Draw selection
   ctx.strokeStyle = 'gold';
   ctx.lineWidth = 3;
@@ -120,7 +124,7 @@ function render() {
     ctx.font = 'bold 12px Arial';
     ctx.fillText(idx, c.x * scale + 3, c.y * scale + 15);
   }
-  
+
   // Draw fields
   for (const [name, rect] of Object.entries(fields)) {
     ctx.strokeStyle = 'cyan';
@@ -164,10 +168,10 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) / scale;
   const y = (e.clientY - rect.top) / scale;
-  
+
   const idx = getClickedCell(x, y);
   if (idx === null) return;
-  
+
   if (e.shiftKey || e.ctrlKey) {
     if (selectedCells.has(idx)) {
       selectedCells.delete(idx);
@@ -177,7 +181,7 @@ canvas.addEventListener('click', (e) => {
   } else {
     selectedCells = new Set([idx]);
   }
-  
+
   render();
   setStatus(`Selected ${selectedCells.size} cells: ${[...selectedCells].sort((a,b)=>a-b).join(', ')}`);
 });
@@ -185,19 +189,19 @@ canvas.addEventListener('click', (e) => {
 async function detectCells() {
   const template = document.getElementById('templateSelect').value;
   setStatus('Detecting cells...');
-  
+
   try {
     const data = await api('/api/selector/detect', {
       method: 'POST',
       body: JSON.stringify({ template })
     });
-    
+
     cells = data.cells;
     hLines = data.h_lines;
     vLines = data.v_lines;
     selectedCells.clear();
     fields = {};
-    
+
     render();
     updateFieldList();
     setStatus(`Detected ${cells.length} cells (${data.rows}x${data.cols})`);
@@ -211,23 +215,27 @@ async function api(url, opts = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...opts
   });
+  if (res.status === 401) {
+    location.href = '/admin/login?next=' + encodeURIComponent(location.pathname);
+    throw new Error('unauthorized');
+  }
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return await res.json();
 }
 
 async function mergeSelected() {
   if (selectedCells.size === 0) return alert('No cells selected');
-  
+
   const selected = [...selectedCells].sort((a, b) => a - b);
   const rects = selected.map(i => cells[i]);
   const x0 = Math.min(...rects.map(c => c.x));
   const y0 = Math.min(...rects.map(c => c.y));
   const x1 = Math.max(...rects.map(c => c.x + c.w));
   const y1 = Math.max(...rects.map(c => c.y + c.h));
-  
+
   const name = prompt(`Merge ${selected.size} cells into (${x0},${y0}) -> (${x1},${y1})\nField name:`);
   if (!name) return;
-  
+
   fields[name] = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, merged_from: selected };
   selectedCells.clear();
   render();
@@ -237,14 +245,14 @@ async function mergeSelected() {
 
 async function nameSelected() {
   if (selectedCells.size === 0) return alert('No cells selected');
-  
+
   for (const idx of [...selectedCells].sort((a, b) => a - b)) {
     const c = cells[idx];
     const name = prompt(`Cell [${idx}] at (${c.x},${c.y})\nField name:`);
     if (!name) continue;
     fields[name] = { x: c.x, y: c.y, w: c.w, h: c.h };
   }
-  
+
   selectedCells.clear();
   render();
   updateFieldList();
@@ -253,7 +261,7 @@ async function nameSelected() {
 function nameAll() {
   if (cells.length === 0) return alert('No cells detected');
   if (!confirm('Name all cells? This will overwrite existing names.')) return;
-  
+
   fields = {};
   for (let i = 0; i < cells.length; i++) {
     const c = cells[i];
@@ -261,7 +269,7 @@ function nameAll() {
     if (!name) continue;
     fields[name] = { x: c.x, y: c.y, w: c.w, h: c.h };
   }
-  
+
   render();
   updateFieldList();
   setStatus(`Named ${Object.keys(fields).length} cells`);
@@ -288,7 +296,7 @@ function saveSession() {
 function loadSession(e) {
   const file = e.target.files[0];
   if (!file) return;
-  
+
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
@@ -297,11 +305,11 @@ function loadSession(e) {
       fields = session.fields || {};
       hLines = session.hLines || [];
       vLines = session.vLines || session.v_lines || [];
-      
+
       if (session.template) {
         document.getElementById('templateSelect').value = session.template;
       }
-      
+
       render();
       updateFieldList();
       setStatus(`Loaded session: ${Object.keys(fields).length} fields`);
@@ -314,7 +322,7 @@ function loadSession(e) {
 
 function exportJson() {
   if (Object.keys(fields).length === 0) return alert('No fields defined');
-  
+
   const output = {};
   for (const [name, rect] of Object.entries(fields)) {
     output[name] = {
@@ -324,7 +332,7 @@ function exportJson() {
       h: rect.h
     };
   }
-  
+
   const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -337,18 +345,18 @@ function exportJson() {
 
 async function saveToServer() {
   if (Object.keys(fields).length === 0) return alert('No fields to save');
-  
+
   const template = document.getElementById('templateSelect').value;
-  
+
   try {
     const res = await api('/api/selector/save', {
       method: 'POST',
       body: JSON.stringify({ template, fields })
     });
-    
+
     setStatus('Saved to server: ' + res.name + ' (' + res.fields + ' fields)');
     alert('Saved to server: ' + res.name);
-    
+
     // Refresh regions list
     loadRegionsList();
   } catch (e) {
@@ -359,14 +367,14 @@ async function saveToServer() {
 
 async function loadRegionsFromServer() {
   const template = document.getElementById('templateSelect').value;
-  
+
   try {
     const data = await api(`/admin/regions/${template}_form_v1.json`);
     if (data.error) return alert(data.error);
-    
+
     fields = data.fields || {};
     selectedCells.clear();
-    
+
     render();
     updateFieldList();
     setStatus(`Loaded ${Object.keys(fields).length} regions from server`);
@@ -393,7 +401,7 @@ async function loadRegionsList() {
 regionsSelect.addEventListener('change', async () => {
   const name = regionsSelect.value;
   if (!name) return;
-  
+
   try {
     const data = await api('/admin/regions/' + encodeURIComponent(name));
     fields = data.fields || {};
@@ -422,5 +430,4 @@ img.src = `/api/selector/image/${templateSelect.value}`;
 // Initial load
 loadRegionsList();
 </script>
-</body>
-</html>
+{% endblock %}

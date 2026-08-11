@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}掃描輸入工具{% endblock %}</title>
+{% block head %}{% endblock %}
+<style>
+  .site-footer { padding: 10px 20px; font-size: 12px; color: #888; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+{% block header %}
+  <h1>{% block header_title %}{% endblock %}</h1>
+  <nav class="header-nav">{% block nav %}{% endblock %}</nav>
+{% endblock %}
+</header>
+
+<div class="container">
+{% block container %}{% endblock %}
+</div>
+
+<footer class="site-footer">{% block footer %}振添股份有限公司 &middot; 生產記錄掃描系統{% endblock %}</footer>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

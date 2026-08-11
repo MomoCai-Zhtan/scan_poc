@@ -28,6 +28,22 @@ nav a {
   text-decoration: none;
 }
 
+nav .link-btn {
+  background: none;
+  border: none;
+  color: #4CAF50;
+  margin-left: 15px;
+  padding: 0;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+nav .link-btn:hover {
+  text-decoration: underline;
+  background: none;
+}
+
 .toolbar {
   background: #2d2d2d;
   padding: 10px;

@@ -1,21 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Admin - 模板管理</title>
+{% extends "base.html" %}
+
+{% block title %}Admin - 模板管理{% endblock %}
+
+{% block head %}
 <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-<header>
-  <h1>Admin Dashboard</h1>
-  <nav>
+{% endblock %}
+
+{% block header_title %}Admin Dashboard{% endblock %}
+
+{% block nav %}
     <a href="/">回首頁</a>
     <a href="/selector">欄位選擇器</a>
-  </nav>
-</header>
+    <form action="/admin/logout" method="post" style="display:inline">
+      <button type="submit" class="link-btn">登出</button>
+    </form>
+{% endblock %}
 
-<main>
+{% block container %}
   <section class="admin-section">
     <h2>Templates</h2>
     <div class="toolbar">
@@ -50,14 +51,16 @@
       <tbody></tbody>
     </table>
   </section>
-</main>
+{% endblock %}
 
+{% block scripts %}
 <script>
-function api(url, opts = {}) {
-  const res = fetch(url, {
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
     headers: {'Content-Type': 'application/json'},
     ...opts
   });
+  if (res.status === 401) { location.href = '/admin/login?next=' + encodeURIComponent(location.pathname); throw new Error('unauthorized'); }
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
@@ -83,6 +86,7 @@ async function uploadTemplate() {
   const form = new FormData();
   form.append('file', input.files[0]);
   const res = await fetch('/admin/templates', { method: 'POST', body: form });
+  if (res.status === 401) { location.href = '/admin/login?next=' + encodeURIComponent(location.pathname); return; }
   const data = await res.json();
   if (data.error) return alert(data.error);
   alert('上傳成功: ' + data.name);
@@ -147,5 +151,4 @@ loadTemplates();
 loadRegions();
 loadMappings();
 </script>
-</body>
-</html>
+{% endblock %}

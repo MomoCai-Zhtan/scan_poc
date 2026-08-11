@@ -1,9 +1,8 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>離心製管掃描輸入工具</title>
+{% extends "base.html" %}
+
+{% block title %}離心製管掃描輸入工具{% endblock %}
+
+{% block head %}
 <link rel="stylesheet" href="/static/style.css">
 <script>
 // Cache buster: reload if server restarted
@@ -15,11 +14,11 @@ const PDFS = {{ pdfs | tojson }};
 const HEADER = {{ header | tojson }};
 const ITEM_COUNT = {{ item_count | tojson }};
 </script>
-</head>
-<body>
-<header>
-  <h1>離心製管掃描輸入</h1>
-  <div class="header-nav">
+{% endblock %}
+
+{% block header_title %}離心製管掃描輸入{% endblock %}
+
+{% block nav %}
     <label>掃描檔:</label>
     <span id="pdfGroup"></span>
     <label class="file-btn">
@@ -37,8 +36,9 @@ const ITEM_COUNT = {{ item_count | tojson }};
     <button id="btnExport" class="primary">匯出 CSV</button>
     <a href="/selector" class="nav-btn">欄位選擇器</a>
     <a href="/admin" class="nav-btn">管理</a>
-  </div>
-</header>
+{% endblock %}
+
+{% block container %}
 <main id="main">
   <div id="emptyState" class="empty-state">請選擇上方 PDF 開始審查</div>
   <div id="layoutBody" class="layout-body" style="display:none">
@@ -83,7 +83,10 @@ const ITEM_COUNT = {{ item_count | tojson }};
   <div class="spinner"></div>
   <span>處理中...</span>
 </div>
+{% endblock %}
 
+{% block footer %}{% endblock %}
+
+{% block scripts %}
 <script src="/static/app.js"></script>
-</body>
-</html>
+{% endblock %}

@@ -2,6 +2,9 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { font-family: "Microsoft JhengHei", sans-serif; margin: 0; background: #fafafa; color: #222; display: flex; flex-direction: column; }
+  /* base.html 的 .container 包了一層 div;display:contents 讓它不佔版位,
+     main 仍然直接吃到 body 的 flex 高度鏈,版面跟包 layout 前完全一樣。 */
+  .container { display: contents; }
   header { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 16px; position: sticky; top: 0; z-index: 10;
             display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 18px; margin: 0 8px 0 0; }
