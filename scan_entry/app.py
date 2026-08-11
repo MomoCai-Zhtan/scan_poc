@@ -701,7 +701,12 @@ def selector_page():
 
 @app.route('/api/selector/image/<template>')
 def selector_image(template):
-    path = os.path.join(TEMPLATES_DIR, template + '.png')
+    name_map = {
+        'small': 'small_form_blank.png',
+        'medium': 'medium_form_blank.png'
+    }
+    filename = name_map.get(template, template + '.png')
+    path = os.path.join(TEMPLATES_DIR, filename)
     if not os.path.exists(path):
         return flask.abort(404)
     return flask.send_file(path, mimetype='image/png')
@@ -711,7 +716,12 @@ def selector_image(template):
 def selector_detect():
     data = flask.request.get_json(force=True)
     template = data.get('template', 'small')
-    path = os.path.join(TEMPLATES_DIR, template + '.png')
+    name_map = {
+        'small': 'small_form_blank.png',
+        'medium': 'medium_form_blank.png'
+    }
+    filename = name_map.get(template, template + '.png')
+    path = os.path.join(TEMPLATES_DIR, filename)
     if not os.path.exists(path):
         return flask.jsonify({'error': 'template not found'}), 404
     
