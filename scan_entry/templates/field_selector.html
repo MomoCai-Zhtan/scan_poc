@@ -78,13 +78,15 @@ function render() {
   canvas.width = img.width * scale;
   canvas.height = img.height * scale;
   
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   
-  // Draw grid
-  ctx.strokeStyle = '#ddd';
+  // Draw grid lines - darker for visibility
+  ctx.strokeStyle = '#888';
   ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
   for (const y of hLines) {
     ctx.beginPath();
     ctx.moveTo(0, y * scale);
@@ -97,11 +99,12 @@ function render() {
     ctx.lineTo(x * scale, canvas.height);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
   
   // Draw cells
   for (let i = 0; i < cells.length; i++) {
     const c = cells[i];
-    ctx.strokeStyle = '#eee';
+    ctx.strokeStyle = 'rgba(255, 165, 0, 0.6)';
     ctx.lineWidth = 1;
     ctx.strokeRect(c.x * scale, c.y * scale, c.w * scale, c.h * scale);
   }
@@ -113,7 +116,7 @@ function render() {
     const c = cells[idx];
     ctx.strokeRect(c.x * scale, c.y * scale, c.w * scale, c.h * scale);
     ctx.fillStyle = 'gold';
-    ctx.font = '12px Arial';
+    ctx.font = 'bold 12px Arial';
     ctx.fillText(idx, c.x * scale + 3, c.y * scale + 15);
   }
   
