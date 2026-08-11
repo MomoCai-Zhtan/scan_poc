@@ -78,6 +78,8 @@ function render() {
   canvas.width = img.width * scale;
   canvas.height = img.height * scale;
   
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   
   // Draw grid
@@ -131,8 +133,17 @@ function updateFieldList() {
     <div class="field-item">
       <span class="field-name">${name}</span>
       <span class="field-coords">(${rect.x},${rect.y}) ${rect.w}x${rect.h}</span>
+      <button class="field-delete" onclick="deleteField('${name}')" title="Delete">×</button>
     </div>
   `).join('');
+}
+
+function deleteField(name) {
+  if (!confirm('Delete field "' + name + '"?')) return;
+  delete fields[name];
+  render();
+  updateFieldList();
+  setStatus('Deleted: ' + name);
 }
 
 function getClickedCell(x, y) {

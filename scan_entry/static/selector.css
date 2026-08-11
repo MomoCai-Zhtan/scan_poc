@@ -83,6 +83,7 @@ nav a {
   border: 1px solid #555;
   cursor: crosshair;
   max-width: 100%;
+  background: #fff;
 }
 
 .status {
@@ -118,6 +119,9 @@ nav a {
   background: #3d3d3d;
   border-radius: 3px;
   font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .field-name {
@@ -128,4 +132,23 @@ nav a {
 .field-coords {
   color: #888;
   margin-left: 5px;
+  font-size: 11px;
+}
+
+.field-delete {
+  background: #f44336;
+  color: white;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  margin-left: 5px;
+}
+
+.field-delete:hover {
+  background: #d32f2f;
 }
