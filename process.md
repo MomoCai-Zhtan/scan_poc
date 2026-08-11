@@ -608,3 +608,56 @@ C 甈? (靘 OCR 璅?? + ink ??):
 | 1150716 | 49.7% | 154 |
 
 平均準確率: ~75%
+
+## 2026-08-10 — 準確率提示與修正追蹤 (M25-M26)
+
+- `verify_baseline.py` / `accuracy_map.py`: 新增逐欄位準確率統計 (per_field_totals/errors)
+- `app.js`: 準確率 badge 顯示逐欄 tooltip; 準確率 < 90% 的弱欄位標紅框 + ⚠️ 提示
+- 新增即時修正追蹤: 使用者移除 OCR 徽標 (=手動修正) 時計數, badge 同時顯示「預期準確率」與「已修正」數
+
+## 2026-08-10~11 — 小型表單解析全面強化 (M27-M34)
+
+**背景**: 小型表單 (淡墨/合併儲存格) 誤讀率遠高於中型, 針對 `ocrx.py` 的小型解析器連續多輪修正:
+
+- **M27-M28 合併儲存格 + 自適應二值化**: `_parse_small_rows` 改用 `_first_non_empty_across_rows` 跨列搜尋合併儲存格值 (品項/模具/轉速等跨 R1-R3 合併時常出現在非首列); `_small_crop` 預設改用 adaptive Gaussian threshold, 新增 `_adaptive_binarize()` 處理淡墨手寫; `ocr_small_page` 加入 160/180/205 三段固定閾值 multi-pass retry
+- **M29 API key fallback**: 支援多組 `MISTRAL_API_KEY`(`OCR_API_KEYS` 清單), 402 (額度用盡) 時自動換下一把 key
+- **列定位修正**: speed_times 誤讀成 speed 值的 bug — 改為只從 R2 讀取; temps/stages 依索引固定從 R1/R2/R3 讀取, 不再跨列亂搜 (M30)
+- **M32 pool_time 回填**: 移除「僅偶數番」限制, 任何番次只要同池且 pool_time 空白皆可回填
+- **M33 內容式 fallback**: `_parse_small_by_content` 依數值範圍 (轉速100-1400/轉速時間1-20/溫度階段1-150) 猜欄位, 搭配「僅在左鄰為文字標籤時才合併欄」的保守版 `_merge_rows_and_cols`, 避免誤併資料欄
+- **M34 JSON schema 解析器**: 新增 `small_form_schema.json` (anchor + 數值範圍定義的欄位語意設定), `_parse_small_from_schema` 依 schema 動態找 anchor 欄位, 解析順序變成: 固定欄位 → 合併欄 → 內容式 → schema → anchor fallback
+
+## 2026-08-11 — 欄位選擇器工具鏈演進 (M35-M40)
+
+**動機**: 之前欄位切割全靠手刻座標常數, 想改成「畫格子 + 點選 + 命名」的可視化工具, 讓表單改版時能快速重新框欄位, 不用改程式碼。
+
+1. **M35 tkinter GUI 版** (`ocr_cli/field_selector_gui.py`): 手動拖曳畫框選欄位, 命名後存 JSON。無自動格線偵測, 純自由選取。
+2. **M36 Cell Selector + Session** (`field_selector_cells.py`): 改為先用 OpenCV 自動偵測整張表格所有格子 (`detect_grid_lines`), 使用者點格子多選 + 合併 + 命名; 新增 Save/Load Session (JSON) 與離開時自動存檔。
+3. **M37-M38 Template Regions 資料集**: 產出 `small_form_v1.json`(通用語意欄位 schema)、`field_mapping.json`(band1 專用欄位別名對照)、`small_form_band1.json`(band1 22 欄手選區域); 新增 `field_selector_auto.py`(自動抓線)、`field_selector_lines.py`(手動拉線版)。
+4. **M39-M40 Web 化 + Admin 後台**: tkinter 版換成瀏覽器版 (`scan_entry/templates/field_selector.html`, HTML5 Canvas), 後端 `/api/selector/detect|save|image` 用 OpenCV 抓格子; 新增 Admin Dashboard (`/admin`) 做 Templates/Regions/Field Mappings 的 CRUD, 取代原本純手動維護 JSON 檔的方式。
+
+後續在 web 版上又修了幾輪: 防止畫布重複渲染疊加造成格線變淡/變粗 (`e4e016b`/`ec0d404`)、欄位刪除、非同步 `api()` 呼叫、從 server 載入既有 regions 下拉選單、把 selector/admin 連結整合進主頁導覽列、以及格線偵測改用 adaptive threshold (`8f807b2`)。
+
+## 2026-08-11~12 — Web Selector 格線偵測重寫 + 後台登入與版面重構
+
+### 背景
+使用者回報中型表單 (中型管) 用「偵測 Cells」切格子時,格子忽大忽小,懷疑是格線太細/重複渲染造成。實際比對 `中型-空白.pdf`/`小型-空白.pdf` 兩份原始表單後發現: 兩種表單本身就是「合併儲存格 (rowspan) + 局部子分隔線」混合結構 (例如中型「管模/時間」子列分隔線只存在於窄欄內, 「模具排列順序」欄改用圓圈圖案完全沒有格線), 並非渲染問題。
+
+### 格線偵測改為輪廓分析 (fix: 712bb3d)
+舊演算法要求一條線的暗像素涵蓋率需 > 整頁寬度(或高度) 30% 才算成立, 再對偵測到的水平/垂直線做笛卡兒積切網格 — 這對只涵蓋部分欄寬的局部子分隔線必然失準。改法: 把橫線遮罩、縱線遮罩疊成一張格線圖, 用輪廓巢狀關係 (`cv2.findContours(..., RETR_TREE)`) 抓沒有子輪廓的最內層輪廓, 直接對應實際被線框住的最小儲存格, 天然支援 rowspan/colspan, 不需要為中型/小型各寫一套規則。
+- 新增共用函式 `ocr_cli/detect_lib.py::detect_table_cells()`, `scan_entry/app.py`(`/api/selector/detect`) 與 `ocr_cli/field_selector_cells.py`(桌面版) 都改呼叫它, 避免重蹈先前「兩邊各修各的」覆轍
+- 驗證: 小型 493 格 / 中型 169 格, 逐格框線與原始 PDF 表格線比對一致 (含合併儲存格與圓圈欄)
+
+### Admin 登入 + 前後台路由分離 (feat: d2542b6)
+使用者要求評估 `/admin*`、`/selector`、`/api/selector/*` 這些後台路由是否該與前台 (掃描輸入主頁) 分開, 並加上登入。
+- 新增 `scan_entry/admin_routes.py` (Flask Blueprint `admin_bp`), 把所有後台路由從 `app.py` 移過去, `app.py` 只留前台掃描工具路由; URL 本身不變, 不影響既有前端呼叫
+- Blueprint 掛 `before_request` 守門: 頁面路由 (`/admin`, `/selector`) 未登入導去 `/admin/login`; API 路由回 401 JSON
+- 帳密: `ADMIN_USERNAME`/`ADMIN_PASSWORD`(或 `ADMIN_PASSWORD_HASH`) 環境變數, 密碼用 werkzeug 雜湊儲存, 未設定時預設 `admin`/`admin123` 並印警告
+- 新增 `scan_entry/templates/admin_login.html` + `scan_entry/static/login.css`
+
+### base.html 共用版面 (header/container/footer)
+新增 `scan_entry/templates/base.html`, `index.html`/`admin.html`/`field_selector.html`/`admin_login.html` 皆改為 `{% extends "base.html" %}`, 用 `header`/`container`/`footer` blocks 组版。`index.html` 依賴 `body{display:flex}` → `main{flex:1}` 撐滿整個畫布高度, 為避免 base 版面多包一層 div 打斷這條 flex 鏈, 在 `style.css` 加 `.container{display:contents}` 讓包裹層不佔版位。各頁保留原本各自的 CSS (index 淺色 / selector 深色), 沒有強制套用共用視覺樣式。
+
+### 驗證
+- Flask test client 逐一測試: 未登入 `/admin`、`/selector` 導向登入頁; 未登入呼叫 API 回 401; 登入/登出流程正確; 三個 template 都能正常 render
+- 啟動實際 dev server, 用 Playwright 開瀏覽器截圖驗證: 登入頁卡片、登入後 dashboard (含登出連結)、`/selector` 深色版面 (含登出連結)、`/` 首頁掃描畫布版面與登入前完全一致 (無 console error)
+- **事故記錄**: 驗證期間把測試用 dev server 留著讓使用者試用, 期間 `ocr_cli/template_regions/{field_mapping,small_form_v1,small_form_band1}.json` 三個檔案被透過 Admin 介面的刪除鈕真的砍掉 (server log 有 `DELETE /admin/regions/...` 紀錄) — 已用 `git restore` 從最後一次 commit (`9d3a8b5`) 復原, 三檔皆為已 commit 內容, 未遺失; 但 `small_form_v1.json` 原本在這次工作開始前就有一份**未 commit** 的手動修改, 該修改在檔案被刪除當下就已遺失, 無法從 git 復原。事後已把該次 dev server 關閉, 避免後台的刪除/寫入動作在無人看管時被誤觸。

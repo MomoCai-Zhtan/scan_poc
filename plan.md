@@ -2,7 +2,7 @@
 
 > **協議來源**: OpenCode session `ses_0489d7cdfffeDaewfq4KXZcKsg` → Kilo 續接
 > **工作目錄**: `D:\OneDrive - 振添股份有限公司\RD_DATA\scan\2026\07-掃描`
-> **最後更新**: 2026-08-03
+> **最後更新**: 2026-08-12 (新增 §9 欄位選擇器/後台管理; 詳細變更歷程見 process.md)
 
 ## 1. 專案概述
 
@@ -321,3 +321,21 @@
 - **現有 API 無需改動**: `/api/pdf/<name>/<page>` 返回單頁分析 + auto_fields
 - **收集模式**: 逐番收集，使用者按「加入集合」後呼叫 `/api/collection` POST (band 資料)
 - **匯出**: `/export` POST 接收來自集合的所有 rows
+
+## 9. 欄位選擇器與後台管理 (2026-08-11~12, M35-M40 + 後續)
+
+**動機**: 欄位切割原本全靠程式裡手刻座標常數, 表單改版就得改程式碼。改用「畫格子 → 點選/合併 → 命名 → 存成 JSON」的可視化工具, 讓非工程師也能重新框欄位。
+
+### 9.1 工具演進
+tkinter 拖曳畫框 (M35) → 自動偵測格線 + 點格子多選/合併 + Save/Load Session (M36) → 產出 template_regions 資料集 + 自動抓線/手動拉線輔助工具 (M37-M38) → 改寫成瀏覽器版 (HTML5 Canvas) 並加上 Admin Dashboard 做 Templates/Regions/Field Mappings 的 CRUD, 取代人工維護 JSON (M39-M40)。
+
+### 9.2 格線偵測演算法 (2026-08-12 重寫)
+小型/中型表單並非單純均勻網格, 而是「合併儲存格 (rowspan) + 只涵蓋部分欄寬的局部子分隔線」混合結構 (例如中型的「管模/時間」子列分隔線只在窄欄內出現; 「模具排列順序」欄用圓圈圖案完全沒有格線)。原本「整頁寬度覆蓋率 30% 門檻 + 笛卡兒積切網格」的作法必然漏判局部子線, 已改為: 疊合橫線/縱線遮罩後, 用輪廓巢狀關係取最內層 (無子輪廓) 的輪廓, 天然對應實際儲存格邊界, 無需為個別表單類型寫死規則。共用函式: `ocr_cli/detect_lib.py::detect_table_cells()`, web 版 (`scan_entry/app.py`) 與桌面版 (`ocr_cli/field_selector_cells.py`) 皆呼叫同一實作。
+
+### 9.3 後台路由分離 + 登入
+`/admin*`、`/selector`、`/api/selector/*` 從 `scan_entry/app.py` 移到獨立的 Flask Blueprint `scan_entry/admin_routes.py`(URL 不變), 並加上 session 登入保護 (未登入: 頁面導向 `/admin/login`, API 回 401)。帳密透過 `ADMIN_USERNAME`/`ADMIN_PASSWORD`(或 `_HASH`) 環境變數設定, 密碼以 werkzeug 雜湊儲存, 正式環境務必覆蓋預設密碼。
+
+### 9.4 共用版面
+新增 `scan_entry/templates/base.html`(header/container/footer blocks), 前台首頁與後台頁面 (`index.html`/`admin.html`/`field_selector.html`/`admin_login.html`) 皆改為繼承它, 各頁仍保留自己原本的視覺風格 (未強制統一 CSS)。
+
+詳細每一步的修法/驗證記錄見 `process.md` 對應日期章節。
