@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Field Selector</title>
+<link rel="stylesheet" href="/static/selector.css">
+</head>
+<body>
+<header>
+  <h1>Web Field Selector</h1>
+  <nav>
+    <a href="/">回首頁</a>
+    <a href="/admin">Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="toolbar">
+    <label>Template:
+      <select id="templateSelect">
+        <option value="small">small_form_blank.png</option>
+        <option value="medium">medium_form_blank.png</option>
+      </select>
+    </label>
+    <button onclick="detectCells()">偵測 Cells</button>
+    <button onclick="mergeSelected()">合併選取</button>
+    <button onclick="nameSelected()">命名選取</button>
+    <button onclick="nameAll()">全部命名</button>
+    <button onclick="saveSession()">儲存 Session</button>
+    <button onclick="document.getElementById('sessionLoad').click()">載入 Session</button>
+    <input type="file" id="sessionLoad" accept=".json" style="display:none" onchange="loadSession(event)">
+    <button onclick="exportJson()">匯出 JSON</button>
+    <button onclick="if(confirm('確定離開?'))history.back()">離開</button>
+  </div>
+
+  <div class="main-area">
+    <div class="canvas-wrap">
+      <canvas id="selectorCanvas"></canvas>
+      <div class="status" id="status">Ready</div>
+    </div>
+    <div class="side-panel">
+      <h3>Fields</h3>
+      <div id="fieldList"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const canvas = document.getElementById('selectorCanvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const fieldListEl = document.getElementById('fieldList');
+
+let img = new Image();
+let scale = 1;
+let cells = [];
+let selectedCells = new Set();
+let fields = {};
+let hLines = [];
+let vLines = [];
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+}
+
+function render() {
+  if (!img.complete) return;
+  
+  const maxW = 900, maxH = 700;
+  scale = Math.min(maxW / img.width, maxH / img.height, 1);
+  canvas.width = img.width * scale;
+  canvas.height = img.height * scale;
+  
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  
+  // Draw grid
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1;
+  for (const y of hLines) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * scale);
+    ctx.lineTo(canvas.width, y * scale);
+    ctx.stroke();
+  }
+  for (const x of vLines) {
+    ctx.beginPath();
+    ctx.moveTo(x * scale, 0);
+    ctx.lineTo(x * scale, canvas.height);
+    ctx.stroke();
+  }
+  
+  // Draw cells
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(c.x * scale, c.y * scale, c.w * scale, c.h * scale);
+  }
+  
+  // Draw selection
+  ctx.strokeStyle = 'gold';
+  ctx.lineWidth = 3;
+  for (const idx of selectedCells) {
+    const c = cells[idx];
+    ctx.strokeRect(c.x * scale, c.y * scale, c.w * scale, c.h * scale);
+    ctx.fillStyle = 'gold';
+    ctx.font = '12px Arial';
+    ctx.fillText(idx, c.x * scale + 3, c.y * scale + 15);
+  }
+  
+  // Draw fields
+  for (const [name, rect] of Object.entries(fields)) {
+    ctx.strokeStyle = 'cyan';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rect.x * scale, rect.y * scale, rect.w * scale, rect.h * scale);
+    ctx.fillStyle = 'cyan';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(name, rect.x * scale + 3, rect.y * scale + 15);
+  }
+}
+
+function updateFieldList() {
+  fieldListEl.innerHTML = Object.entries(fields).map(([name, rect]) => `
+    <div class="field-item">
+      <span class="field-name">${name}</span>
+      <span class="field-coords">(${rect.x},${rect.y}) ${rect.w}x${rect.h}</span>
+    </div>
+  `).join('');
+}
+
+function getClickedCell(x, y) {
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (c.x <= x && x <= c.x + c.w && c.y <= y && y <= c.y + c.h) {
+      return i;
+    }
+  }
+  return null;
+}
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / scale;
+  const y = (e.clientY - rect.top) / scale;
+  
+  const idx = getClickedCell(x, y);
+  if (idx === null) return;
+  
+  if (e.shiftKey || e.ctrlKey) {
+    if (selectedCells.has(idx)) {
+      selectedCells.delete(idx);
+    } else {
+      selectedCells.add(idx);
+    }
+  } else {
+    selectedCells = new Set([idx]);
+  }
+  
+  render();
+  setStatus(`Selected ${selectedCells.size} cells: ${[...selectedCells].sort((a,b)=>a-b).join(', ')}`);
+});
+
+async function detectCells() {
+  const template = document.getElementById('templateSelect').value;
+  setStatus('Detecting cells...');
+  
+  try {
+    const data = await api('/api/selector/detect', {
+      method: 'POST',
+      body: JSON.stringify({ template })
+    });
+    
+    cells = data.cells;
+    hLines = data.h_lines;
+    vLines = data.v_lines;
+    selectedCells.clear();
+    fields = {};
+    
+    render();
+    updateFieldList();
+    setStatus(`Detected ${cells.length} cells (${data.rows}x${data.cols})`);
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+}
+
+function api(url, opts = {}) {
+  const res = fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function mergeSelected() {
+  if (selectedCells.size === 0) return alert('No cells selected');
+  
+  const selected = [...selectedCells].sort((a, b) => a - b);
+  const rects = selected.map(i => cells[i]);
+  const x0 = Math.min(...rects.map(c => c.x));
+  const y0 = Math.min(...rects.map(c => c.y));
+  const x1 = Math.max(...rects.map(c => c.x + c.w));
+  const y1 = Math.max(...rects.map(c => c.y + c.h));
+  
+  const name = prompt(`Merge ${selected.size} cells into (${x0},${y0}) -> (${x1},${y1})\nField name:`);
+  if (!name) return;
+  
+  fields[name] = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, merged_from: selected };
+  selectedCells.clear();
+  render();
+  updateFieldList();
+  setStatus(`Merged into: ${name}`);
+}
+
+async function nameSelected() {
+  if (selectedCells.size === 0) return alert('No cells selected');
+  
+  for (const idx of [...selectedCells].sort((a, b) => a - b)) {
+    const c = cells[idx];
+    const name = prompt(`Cell [${idx}] at (${c.x},${c.y})\nField name:`);
+    if (!name) continue;
+    fields[name] = { x: c.x, y: c.y, w: c.w, h: c.h };
+  }
+  
+  selectedCells.clear();
+  render();
+  updateFieldList();
+}
+
+function nameAll() {
+  if (cells.length === 0) return alert('No cells detected');
+  if (!confirm('Name all cells? This will overwrite existing names.')) return;
+  
+  fields = {};
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    const name = prompt(`Cell [${i}] at (${c.x},${c.y})\nField name (cancel to skip):`);
+    if (!name) continue;
+    fields[name] = { x: c.x, y: c.y, w: c.w, h: c.h };
+  }
+  
+  render();
+  updateFieldList();
+  setStatus(`Named ${Object.keys(fields).length} cells`);
+}
+
+function saveSession() {
+  const session = {
+    selectedCells: [...selectedCells],
+    fields,
+    hLines,
+    vLines,
+    template: document.getElementById('templateSelect').value
+  };
+  const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selector_session.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('Session saved');
+}
+
+function loadSession(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const session = JSON.parse(ev.target.result);
+      selectedCells = new Set(session.selectedCells || []);
+      fields = session.fields || {};
+      hLines = session.hLines || [];
+      vLines = session.v_lines || [];
+      
+      if (session.template) {
+        document.getElementById('templateSelect').value = session.template;
+      }
+      
+      render();
+      updateFieldList();
+      setStatus(`Loaded session: ${Object.keys(fields).length} fields`);
+    } catch (err) {
+      alert('Failed to load session: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function exportJson() {
+  if (Object.keys(fields).length === 0) return alert('No fields defined');
+  
+  const output = {};
+  for (const [name, rect] of Object.entries(fields)) {
+    output[name] = {
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h
+    };
+  }
+  
+  const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'field_regions.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('Exported JSON');
+}
+
+// Load template image
+const templateSelect = document.getElementById('templateSelect');
+templateSelect.addEventListener('change', loadTemplate);
+
+function loadTemplate() {
+  const template = templateSelect.value;
+  img.src = `/api/selector/image/${template}`;
+}
+
+img = new Image();
+img.onload = () => {
+  render();
+  setStatus(`Loaded ${img.width}x${img.height}`);
+};
+img.src = `/api/selector/image/${templateSelect.value}`;
+</script>
+</body>
+</html>

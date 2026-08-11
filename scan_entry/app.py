@@ -12,6 +12,7 @@ from datetime import datetime
 import cv2
 import flask
 import numpy as np
+from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OCR = os.path.join(ROOT, 'ocr_cli')
@@ -505,6 +506,274 @@ def export():
             w.writerow(line)
     logger.info('export %s rows=%d path=%s', pdf, len(rows), out_path)
     return flask.jsonify({'ok': True, 'path': out_path, 'rows': len(rows)})
+
+
+# ========== Admin CRUD ==========
+
+TEMPLATES_DIR = os.path.join(ROOT, 'ocr_cli', 'templates')
+REGIONS_DIR = os.path.join(ROOT, 'ocr_cli', 'template_regions')
+MAPPINGS_DIR = os.path.join(ROOT, 'ocr_cli', 'field_mappings')
+
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(REGIONS_DIR, exist_ok=True)
+os.makedirs(MAPPINGS_DIR, exist_ok=True)
+
+
+def _list_files(directory, ext='.json'):
+    if not os.path.exists(directory):
+        return []
+    return [f for f in os.listdir(directory) if f.endswith(ext)]
+
+
+def _load_json(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _save_json(path, data):
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+@app.route('/admin')
+def admin_dashboard():
+    return flask.render_template('admin.html')
+
+
+@app.route('/admin/templates', methods=['GET'])
+def admin_list_templates():
+    files = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))] if os.path.exists(TEMPLATES_DIR) else []
+    templates = []
+    for f in files:
+        path = os.path.join(TEMPLATES_DIR, f)
+        templates.append({
+            'name': f,
+            'size': os.path.getsize(path),
+            'modified': datetime.fromtimestamp(os.path.getmtime(path)).isoformat()
+        })
+    return flask.jsonify({'templates': templates})
+
+
+@app.route('/admin/templates', methods=['POST'])
+def admin_create_template():
+    if 'file' not in flask.request.files:
+        return flask.jsonify({'error': 'no file'}), 400
+    f = flask.request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
+        return flask.jsonify({'error': 'invalid file type'}), 400
+    
+    filename = f.filename
+    if filename.lower().endswith('.pdf'):
+        path = os.path.join(TEMPLATES_DIR, filename)
+        f.save(path)
+        pages = st.render_pages(path, 200)
+        if pages:
+            png_name = filename.replace('.pdf', '.png')
+            cv2.imwrite(os.path.join(TEMPLATES_DIR, png_name), pages[0])
+            os.remove(path)
+            filename = png_name
+    else:
+        f.save(os.path.join(TEMPLATES_DIR, filename))
+    
+    return flask.jsonify({'name': filename, 'status': 'created'})
+
+
+@app.route('/admin/templates/<name>', methods=['DELETE'])
+def admin_delete_template(name):
+    path = os.path.join(TEMPLATES_DIR, name)
+    if os.path.exists(path):
+        os.remove(path)
+    return flask.jsonify({'status': 'deleted'})
+
+
+@app.route('/admin/regions', methods=['GET'])
+def admin_list_regions():
+    files = _list_files(REGIONS_DIR, '.json')
+    regions = []
+    for f in files:
+        path = os.path.join(REGIONS_DIR, f)
+        data = _load_json(path)
+        regions.append({
+            'name': f,
+            'fields': list(data.keys()) if data else [],
+            'modified': datetime.fromtimestamp(os.path.getmtime(path)).isoformat()
+        })
+    return flask.jsonify({'regions': regions})
+
+
+@app.route('/admin/regions', methods=['POST'])
+def admin_create_regions():
+    data = flask.request.get_json(force=True)
+    name = data.get('name', '')
+    if not name.endswith('.json'):
+        name += '.json'
+    path = os.path.join(REGIONS_DIR, name)
+    _save_json(path, data.get('fields', {}))
+    return flask.jsonify({'name': name, 'status': 'created'})
+
+
+@app.route('/admin/regions/<name>', methods=['GET'])
+def admin_get_regions(name):
+    path = os.path.join(REGIONS_DIR, name)
+    data = _load_json(path)
+    if data is None:
+        return flask.jsonify({'error': 'not found'}), 404
+    return flask.jsonify({'name': name, 'fields': data})
+
+
+@app.route('/admin/regions/<name>', methods=['PUT'])
+def admin_update_regions(name):
+    path = os.path.join(REGIONS_DIR, name)
+    data = flask.request.get_json(force=True)
+    _save_json(path, data.get('fields', {}))
+    return flask.jsonify({'name': name, 'status': 'updated'})
+
+
+@app.route('/admin/regions/<name>', methods=['DELETE'])
+def admin_delete_regions(name):
+    path = os.path.join(REGIONS_DIR, name)
+    if os.path.exists(path):
+        os.remove(path)
+    return flask.jsonify({'status': 'deleted'})
+
+
+@app.route('/admin/mappings', methods=['GET'])
+def admin_list_mappings():
+    files = _list_files(MAPPINGS_DIR, '.json')
+    mappings = []
+    for f in files:
+        path = os.path.join(MAPPINGS_DIR, f)
+        data = _load_json(path)
+        mappings.append({
+            'name': f,
+            'mappings': len(data) if data else 0,
+            'modified': datetime.fromtimestamp(os.path.getmtime(path)).isoformat()
+        })
+    return flask.jsonify({'mappings': mappings})
+
+
+@app.route('/admin/mappings', methods=['POST'])
+def admin_create_mapping():
+    data = flask.request.get_json(force=True)
+    name = data.get('name', '')
+    if not name.endswith('.json'):
+        name += '.json'
+    path = os.path.join(MAPPINGS_DIR, name)
+    _save_json(path, data.get('mappings', {}))
+    return flask.jsonify({'name': name, 'status': 'created'})
+
+
+@app.route('/admin/mappings/<name>', methods=['GET'])
+def admin_get_mapping(name):
+    path = os.path.join(MAPPINGS_DIR, name)
+    data = _load_json(path)
+    if data is None:
+        return flask.jsonify({'error': 'not found'}), 404
+    return flask.jsonify({'name': name, 'mappings': data})
+
+
+@app.route('/admin/mappings/<name>', methods=['PUT'])
+def admin_update_mapping(name):
+    path = os.path.join(MAPPINGS_DIR, name)
+    data = flask.request.get_json(force=True)
+    _save_json(path, data.get('mappings', {}))
+    return flask.jsonify({'name': name, 'status': 'updated'})
+
+
+@app.route('/admin/mappings/<name>', methods=['DELETE'])
+def admin_delete_mapping(name):
+    path = os.path.join(MAPPINGS_DIR, name)
+    if os.path.exists(path):
+        os.remove(path)
+    return flask.jsonify({'status': 'deleted'})
+
+
+# ========== Web Field Selector ==========
+
+@app.route('/selector')
+def selector_page():
+    template = flask.request.args.get('template', 'small')
+    output = flask.request.args.get('output', '')
+    return flask.render_template('field_selector.html', template=template, output=output)
+
+
+@app.route('/api/selector/image/<template>')
+def selector_image(template):
+    path = os.path.join(TEMPLATES_DIR, template + '.png')
+    if not os.path.exists(path):
+        return flask.abort(404)
+    return flask.send_file(path, mimetype='image/png')
+
+
+@app.route('/api/selector/detect', methods=['POST'])
+def selector_detect():
+    data = flask.request.get_json(force=True)
+    template = data.get('template', 'small')
+    path = os.path.join(TEMPLATES_DIR, template + '.png')
+    if not os.path.exists(path):
+        return flask.jsonify({'error': 'template not found'}), 404
+    
+    pil_img = Image.open(path)
+    img_rgb = np.array(pil_img)
+    img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+    
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    _, bw = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    h, w = bw.shape
+    
+    horiz = bw.copy()
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 30, 1))
+    horiz = cv2.morphologyEx(horiz, cv2.MORPH_OPEN, horiz_kernel, iterations=1)
+    h_lines = []
+    for y in range(h):
+        if np.sum(horiz[y, :]) > w * 0.3 * 255:
+            h_lines.append(y)
+    
+    vert = bw.copy()
+    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // 30))
+    vert = cv2.morphologyEx(vert, cv2.MORPH_OPEN, vert_kernel, iterations=1)
+    v_lines = []
+    for x in range(w):
+        if np.sum(vert[:, x]) > h * 0.3 * 255:
+            v_lines.append(x)
+    
+    def cluster(lines, threshold):
+        if not lines:
+            return []
+        clusters = [[lines[0]]]
+        for x in lines[1:]:
+            if x - clusters[-1][-1] <= threshold:
+                clusters[-1].append(x)
+            else:
+                clusters.append([x])
+        return [int(np.mean(c)) for c in clusters]
+    
+    h_lines = cluster(h_lines, 10)
+    v_lines = cluster(v_lines, 10)
+    
+    cells = []
+    for row_idx in range(len(h_lines) - 1):
+        for col_idx in range(len(v_lines) - 1):
+            x0 = v_lines[col_idx]
+            y0 = h_lines[row_idx]
+            x1 = v_lines[col_idx + 1]
+            y1 = h_lines[row_idx + 1]
+            cells.append({
+                'row': row_idx,
+                'col': col_idx,
+                'x': x0, 'y': y0,
+                'w': x1 - x0, 'h': y1 - y0
+            })
+    
+    return flask.jsonify({
+        'cells': cells,
+        'h_lines': h_lines,
+        'v_lines': v_lines,
+        'rows': len(h_lines) - 1,
+        'cols': len(v_lines) - 1
+    })
 
 
 @app.route('/favicon.ico')

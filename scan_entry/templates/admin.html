@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - 模板管理</title>
+<link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<header>
+  <h1>Admin Dashboard</h1>
+  <nav>
+    <a href="/">回首頁</a>
+    <a href="/selector">欄位選擇器</a>
+  </nav>
+</header>
+
+<main>
+  <section class="admin-section">
+    <h2>Templates</h2>
+    <div class="toolbar">
+      <input type="file" id="templateUpload" accept=".png,.jpg,.jpeg,.pdf">
+      <button onclick="uploadTemplate()">上傳 Template</button>
+      <button onclick="loadTemplates()">重新整理</button>
+    </div>
+    <table id="templateTable">
+      <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Regions</h2>
+    <div class="toolbar">
+      <button onclick="loadRegions()">重新整理</button>
+    </div>
+    <table id="regionTable">
+      <thead><tr><th>Name</th><th>Fields</th><th>Modified</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Field Mappings</h2>
+    <div class="toolbar">
+      <button onclick="loadMappings()">重新整理</button>
+    </div>
+    <table id="mappingTable">
+      <thead><tr><th>Name</th><th>Mappings</th><th>Modified</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+function api(url, opts = {}) {
+  const res = fetch(url, {
+    headers: {'Content-Type': 'application/json'},
+    ...opts
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function loadTemplates() {
+  const data = await api('/admin/templates');
+  const tbody = document.querySelector('#templateTable tbody');
+  tbody.innerHTML = data.templates.map(t => `
+    <tr>
+      <td>${t.name}</td>
+      <td>${t.size}</td>
+      <td>${t.modified}</td>
+      <td>
+        <button onclick="deleteTemplate('${t.name}')">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function uploadTemplate() {
+  const input = document.getElementById('templateUpload');
+  if (!input.files.length) return alert('請選擇檔案');
+  const form = new FormData();
+  form.append('file', input.files[0]);
+  const res = await fetch('/admin/templates', { method: 'POST', body: form });
+  const data = await res.json();
+  if (data.error) return alert(data.error);
+  alert('上傳成功: ' + data.name);
+  loadTemplates();
+}
+
+async function deleteTemplate(name) {
+  if (!confirm('刪除 ' + name + '?')) return;
+  await api('/admin/templates/' + encodeURIComponent(name), { method: 'DELETE' });
+  loadTemplates();
+}
+
+async function loadRegions() {
+  const data = await api('/admin/regions');
+  const tbody = document.querySelector('#regionTable tbody');
+  tbody.innerHTML = data.regions.map(r => `
+    <tr>
+      <td>${r.name}</td>
+      <td>${r.fields.length} fields</td>
+      <td>${r.modified}</td>
+      <td>
+        <button onclick="viewRegions('${r.name}')">查看</button>
+        <button onclick="deleteRegions('${r.name}')">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function viewRegions(name) {
+  const data = await api('/admin/regions/' + encodeURIComponent(name));
+  alert(JSON.stringify(data.fields, null, 2));
+}
+
+async function deleteRegions(name) {
+  if (!confirm('刪除 ' + name + '?')) return;
+  await api('/admin/regions/' + encodeURIComponent(name), { method: 'DELETE' });
+  loadRegions();
+}
+
+async function loadMappings() {
+  const data = await api('/admin/mappings');
+  const tbody = document.querySelector('#mappingTable tbody');
+  tbody.innerHTML = data.mappings.map(m => `
+    <tr>
+      <td>${m.name}</td>
+      <td>${m.mappings} mappings</td>
+      <td>${m.modified}</td>
+      <td>
+        <button onclick="deleteMappings('${m.name}')">刪除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function deleteMappings(name) {
+  if (!confirm('刪除 ' + name + '?')) return;
+  await api('/admin/mappings/' + encodeURIComponent(name), { method: 'DELETE' });
+  loadMappings();
+}
+
+loadTemplates();
+loadRegions();
+loadMappings();
+</script>
+</body>
+</html>
