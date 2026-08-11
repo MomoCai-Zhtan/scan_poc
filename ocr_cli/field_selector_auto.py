@@ -30,7 +30,8 @@ TEMPLATES = {
 def detect_table_lines(img_bgr):
     """Detect horizontal and vertical lines in table image."""
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    _, bw = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY_INV, 11, 5)
     
     h, w = bw.shape
     
