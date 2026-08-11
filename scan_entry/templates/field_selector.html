@@ -185,13 +185,13 @@ async function detectCells() {
   }
 }
 
-function api(url, opts = {}) {
-  const res = fetch(url, {
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     ...opts
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  return await res.json();
 }
 
 async function mergeSelected() {
