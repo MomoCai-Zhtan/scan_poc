@@ -19,21 +19,25 @@ const ITEM_COUNT = {{ item_count | tojson }};
 <body>
 <header>
   <h1>離心製管掃描輸入</h1>
-  <label>掃描檔:</label>
-  <span id="pdfGroup"></span>
-  <label class="file-btn">
-    上傳 PDF
-    <input type="file" id="pdfUpload" accept=".pdf" style="display:none">
-  </label>
-  <span id="pageNav" style="display:none">
-    <button id="btnPrev" class="nav-btn">上一頁</button>
-    <span id="pageInfo"></span>
-    <button id="btnNext" class="nav-btn">下一頁</button>
-  </span>
-  <span id="dateInfo"></span>
-  <span id="msg" class="msg" style="display:none"></span>
-  <span id="collInfo" class="badge" style="display:none">已收集: 0</span>
-  <button id="btnExport" class="primary">匯出 CSV</button>
+  <div class="header-nav">
+    <label>掃描檔:</label>
+    <span id="pdfGroup"></span>
+    <label class="file-btn">
+      上傳 PDF
+      <input type="file" id="pdfUpload" accept=".pdf" style="display:none">
+    </label>
+    <span id="pageNav" style="display:none">
+      <button id="btnPrev" class="nav-btn">上一頁</button>
+      <span id="pageInfo"></span>
+      <button id="btnNext" class="nav-btn">下一頁</button>
+    </span>
+    <span id="dateInfo"></span>
+    <span id="msg" class="msg" style="display:none"></span>
+    <span id="collInfo" class="badge" style="display:none">已收集: 0</span>
+    <button id="btnExport" class="primary">匯出 CSV</button>
+    <a href="/selector" class="nav-btn">欄位選擇器</a>
+    <a href="/admin" class="nav-btn">管理</a>
+  </div>
 </header>
 <main id="main">
   <div id="emptyState" class="empty-state">請選擇上方 PDF 開始審查</div>
