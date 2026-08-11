@@ -23,6 +23,11 @@
         <option value="medium">medium_form_blank.png</option>
       </select>
     </label>
+    <label>Regions:
+      <select id="regionsSelect">
+        <option value="">-- Load from Server --</option>
+      </select>
+    </label>
     <button onclick="detectCells()">偵測 Cells</button>
     <button onclick="mergeSelected()">合併選取</button>
     <button onclick="nameSelected()">命名選取</button>
@@ -335,11 +340,39 @@ async function loadRegionsFromServer() {
 
 // Load template image
 const templateSelect = document.getElementById('templateSelect');
+const regionsSelect = document.getElementById('regionsSelect');
 templateSelect.addEventListener('change', loadTemplate);
+
+async function loadRegionsList() {
+  try {
+    const data = await api('/admin/regions');
+    regionsSelect.innerHTML = '<option value="">-- Load from Server --</option>' +
+      data.regions.map(r => `<option value="${r.name}">${r.name} (${r.fields.length} fields)</option>`).join('');
+  } catch (e) {
+    setStatus('Failed to load regions list: ' + e.message);
+  }
+}
+
+regionsSelect.addEventListener('change', async () => {
+  const name = regionsSelect.value;
+  if (!name) return;
+  
+  try {
+    const data = await api('/admin/regions/' + encodeURIComponent(name));
+    fields = data.fields || {};
+    selectedCells.clear();
+    render();
+    updateFieldList();
+    setStatus(`Loaded ${Object.keys(fields).length} regions from ${name}`);
+  } catch (e) {
+    setStatus('Error loading regions: ' + e.message);
+  }
+});
 
 function loadTemplate() {
   const template = templateSelect.value;
   img.src = `/api/selector/image/${template}`;
+  loadRegionsList();
 }
 
 img = new Image();
@@ -348,6 +381,9 @@ img.onload = () => {
   setStatus(`Loaded ${img.width}x${img.height}`);
 };
 img.src = `/api/selector/image/${templateSelect.value}`;
+
+// Initial load
+loadRegionsList();
 </script>
 </body>
 </html>
