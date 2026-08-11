@@ -22,6 +22,68 @@ def find_lines_robust(gray, thr_frac=0.10, vfrac=0.10):
     return hl, vl
 
 
+def detect_table_cells(img_bgr, min_w=15, min_h=15, min_area=400):
+    """偵測表格儲存格,支援合併儲存格(rowspan/colspan)與只涵蓋部分寬高的局部子分隔線
+    (例如中型表單「管模/時間」子列只在窄欄內才有橫線,不會貫穿整頁寬度)。
+
+    作法:把橫線遮罩與縱線遮罩疊成一張「格線圖」,用輪廓的巢狀關係(RETR_TREE)取
+    沒有子輪廓的最內層輪廓——那正好對應實際被線框住的最小儲存格,不論該儲存格是
+    否跨了好幾個子列/子欄。比起「整頁寬度覆蓋率門檻 + 逐列逐欄做笛卡兒積」的作法,
+    這裡不需要假設整張表都是均勻網格。
+
+    回傳 (cells, h_lines, v_lines):
+      cells   依讀取順序(上到下、左到右)排序的 [{x,y,w,h}, ...]
+      h_lines/v_lines 由各 cell 邊界聚類得出,僅供畫參考格線用。
+    """
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY_INV, 11, 5)
+    h, w = bw.shape
+
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 30, 1))
+    horiz = cv2.morphologyEx(bw, cv2.MORPH_OPEN, horiz_kernel, iterations=1)
+    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // 30))
+    vert = cv2.morphologyEx(bw, cv2.MORPH_OPEN, vert_kernel, iterations=1)
+
+    grid = cv2.bitwise_or(horiz, vert)
+    grid = cv2.dilate(grid, np.ones((3, 3), np.uint8), iterations=1)
+
+    contours, hierarchy = cv2.findContours(grid, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return [], [], []
+    hierarchy = hierarchy[0]
+
+    cells = []
+    for i, c in enumerate(contours):
+        if hierarchy[i][2] != -1:  # 有子輪廓 -> 不是最內層儲存格
+            continue
+        x, y, cw, ch = cv2.boundingRect(c)
+        if cw < min_w or ch < min_h or cw * ch < min_area:
+            continue
+        if cw > w * 0.98 and ch > h * 0.98:  # 整頁外框保險
+            continue
+        cells.append({'x': int(x), 'y': int(y), 'w': int(cw), 'h': int(ch)})
+
+    cells.sort(key=lambda c: (c['y'], c['x']))
+
+    def cluster(vals, threshold=10):
+        vals = sorted(vals)
+        if not vals:
+            return []
+        clusters = [[vals[0]]]
+        for v in vals[1:]:
+            if v - clusters[-1][-1] <= threshold:
+                clusters[-1].append(v)
+            else:
+                clusters.append([v])
+        return [int(np.mean(c)) for c in clusters]
+
+    h_lines = cluster([c['y'] for c in cells] + [c['y'] + c['h'] for c in cells])
+    v_lines = cluster([c['x'] for c in cells] + [c['x'] + c['w'] for c in cells])
+
+    return cells, h_lines, v_lines
+
+
 def row_bands(hl):
     """回傳 (型別, 番次列 [(y0,y1)...])。資料列區 = hline 之後間距進入穩定列高模式。"""
     gaps = [(a, b - a) for a, b in zip(hl[:-1], hl[1:])]

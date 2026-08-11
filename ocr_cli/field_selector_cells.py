@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import detect_lib
 
 TEMPLATES = {
     'small': os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'small_form_blank.png'),
@@ -30,64 +31,8 @@ TEMPLATES = {
 
 
 def detect_grid_lines(img_bgr):
-    """Detect table grid lines and return cell rectangles."""
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                               cv2.THRESH_BINARY_INV, 11, 5)
-    
-    h, w = bw.shape
-    
-    # Detect horizontal lines
-    horiz = bw.copy()
-    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 30, 1))
-    horiz = cv2.morphologyEx(horiz, cv2.MORPH_OPEN, horiz_kernel, iterations=1)
-    
-    h_lines = []
-    for y in range(h):
-        if np.sum(horiz[y, :]) > w * 0.3 * 255:
-            h_lines.append(y)
-    
-    # Detect vertical lines
-    vert = bw.copy()
-    vert_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // 30))
-    vert = cv2.morphologyEx(vert, cv2.MORPH_OPEN, vert_kernel, iterations=1)
-    
-    v_lines = []
-    for x in range(w):
-        if np.sum(vert[:, x]) > h * 0.3 * 255:
-            v_lines.append(x)
-    
-    # Cluster nearby lines
-    def cluster(lines, threshold):
-        if not lines:
-            return []
-        clusters = [[lines[0]]]
-        for x in lines[1:]:
-            if x - clusters[-1][-1] <= threshold:
-                clusters[-1].append(x)
-            else:
-                clusters.append([x])
-        return [int(np.mean(c)) for c in clusters]
-    
-    h_lines = cluster(h_lines, 10)
-    v_lines = cluster(v_lines, 10)
-    
-    # Generate cells from line intersections
-    cells = []
-    for row_idx in range(len(h_lines) - 1):
-        for col_idx in range(len(v_lines) - 1):
-            x0 = v_lines[col_idx]
-            y0 = h_lines[row_idx]
-            x1 = v_lines[col_idx + 1]
-            y1 = h_lines[row_idx + 1]
-            cells.append({
-                'row': row_idx,
-                'col': col_idx,
-                'x': x0, 'y': y0,
-                'w': x1 - x0, 'h': y1 - y0
-            })
-    
-    return cells, h_lines, v_lines
+    """Detect table cells (including merged/rowspan cells). See detect_lib.detect_table_cells."""
+    return detect_lib.detect_table_cells(img_bgr)
 
 
 class CellSelector:
