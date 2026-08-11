@@ -35,6 +35,7 @@
     <button onclick="saveSession()">儲存 Session</button>
     <button onclick="document.getElementById('sessionLoad').click()">載入 Session</button>
     <input type="file" id="sessionLoad" accept=".json" style="display:none" onchange="loadSession(event)">
+    <button onclick="saveToServer()">儲存到 Server</button>
     <button onclick="loadRegionsFromServer()">從 Server 載入 Regions</button>
     <button onclick="exportJson()">匯出 JSON</button>
     <button onclick="if(confirm('確定離開?'))history.back()">離開</button>
@@ -332,6 +333,28 @@ function exportJson() {
   a.click();
   URL.revokeObjectURL(url);
   setStatus('Exported JSON');
+}
+
+async function saveToServer() {
+  if (Object.keys(fields).length === 0) return alert('No fields to save');
+  
+  const template = document.getElementById('templateSelect').value;
+  
+  try {
+    const res = await api('/api/selector/save', {
+      method: 'POST',
+      body: JSON.stringify({ template, fields })
+    });
+    
+    setStatus('Saved to server: ' + res.name + ' (' + res.fields + ' fields)');
+    alert('Saved to server: ' + res.name);
+    
+    // Refresh regions list
+    loadRegionsList();
+  } catch (e) {
+    setStatus('Error saving: ' + e.message);
+    alert('Failed to save: ' + e.message);
+  }
 }
 
 async function loadRegionsFromServer() {

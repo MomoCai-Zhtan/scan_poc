@@ -787,6 +787,29 @@ def selector_detect():
     })
 
 
+@app.route('/api/selector/save', methods=['POST'])
+def selector_save():
+    data = flask.request.get_json(force=True)
+    template = data.get('template', 'small')
+    fields = data.get('fields', {})
+    
+    if not fields:
+        return flask.jsonify({'error': 'no fields to save'}), 400
+    
+    name_map = {
+        'small': 'small_form',
+        'medium': 'medium_form'
+    }
+    base_name = name_map.get(template, template + '_form')
+    filename = base_name + '_v1.json'
+    path = os.path.join(REGIONS_DIR, filename)
+    
+    _save_json(path, fields)
+    logger.info('selector save: %s fields=%d path=%s', template, len(fields), path)
+    
+    return flask.jsonify({'ok': True, 'name': filename, 'fields': len(fields)})
+
+
 @app.route('/favicon.ico')
 def favicon():
     return flask.Response('', status=204)
